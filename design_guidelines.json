@@ -1,0 +1,114 @@
+{
+  "design_system": {
+    "typography": {
+      "font_family": {
+        "heading": "Outfit, sans-serif",
+        "body": "Inter, sans-serif",
+        "mono": "JetBrains Mono, monospace"
+      },
+      "scale": {
+        "h1": "text-4xl md:text-5xl font-bold tracking-tight",
+        "h2": "text-3xl md:text-4xl font-semibold tracking-tight",
+        "h3": "text-2xl font-semibold tracking-tight",
+        "body_large": "text-lg leading-relaxed",
+        "body_default": "text-base leading-relaxed text-muted-foreground",
+        "caption": "text-sm text-muted-foreground uppercase tracking-wider"
+      }
+    },
+    "colors": {
+      "theme": "dark",
+      "palette": {
+        "background": "#0A0A0B",
+        "surface": "#18181B",
+        "surface_highlight": "#27272A",
+        "primary": "#7C3AED",
+        "primary_glow": "rgba(124, 58, 237, 0.5)",
+        "accent": "#8B5CF6",
+        "success": "#10B981",
+        "error": "#EF4444",
+        "text_primary": "#FAFAFA",
+        "text_secondary": "#A1A1AA",
+        "border": "rgba(255, 255, 255, 0.1)"
+      }
+    },
+    "visual_enhancers": {
+      "glassmorphism": "backdrop-blur-xl bg-black/40 border border-white/10",
+      "neon_glow": "shadow-[0_0_20px_rgba(124,58,237,0.3)]",
+      "subtle_gradient": "bg-gradient-to-b from-white/5 to-transparent",
+      "radius": "rounded-xl"
+    },
+    "layout": {
+      "grid_system": "grid grid-cols-1 md:grid-cols-12 gap-6",
+      "sidebar_width": "w-64",
+      "container_padding": "p-6 md:p-8"
+    }
+  },
+  "components": {
+    "GestureCard": {
+      "description": "A card representing a gesture. Minimalist, dark surface, shows video preview on hover.",
+      "specs": "bg-surface border border-white/5 hover:border-primary/50 transition-all duration-300 hover:shadow-lg hover:shadow-primary/20 rounded-xl overflow-hidden group relative",
+      "interactions": "Scale up slightly on hover. Video preview plays on hover."
+    },
+    "EnrollmentFlow": {
+      "description": "Face ID style enrollment modal. Circular progress ring, camera feed overlay.",
+      "specs": "Fixed overlay, glassmorphism background. Central circular camera feed with SVG progress ring.",
+      "animation": "Pulse on success, Shake on failure. Progress ring fills smoothly."
+    },
+    "CameraFeed": {
+      "description": "Real-time camera preview with HUD overlay.",
+      "specs": "Relative container, rounded-lg overflow-hidden. Overlay includes corner brackets and scanning line.",
+      "overlay": "Absolute positioning, z-10. Green/Purple scanning line animation."
+    },
+    "Sidebar": {
+      "description": "Persistent navigation sidebar.",
+      "specs": "Fixed left, h-screen, glassmorphism (bg-black/40 backdrop-blur-xl), border-r border-white/10. Flex column layout."
+    }
+  },
+  "assets": {
+    "images": {
+      "gestures": {
+        "palm_open": "https://images.unsplash.com/photo-1740503774310-6f6052695a58?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "fist": "https://images.unsplash.com/photo-1637496836363-f50eb91e9889?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "thumbs_up": "https://images.unsplash.com/photo-1697534539729-2b772edcb49e?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "swipe": "https://images.unsplash.com/photo-1568654385189-49c3e9cdba5a?crop=entropy&cs=srgb&fm=jpg&q=85"
+      },
+      "backgrounds": {
+        "abstract_purple": "https://images.unsplash.com/photo-1768327239495-cd6edaeab619?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "foil_texture": "https://images.unsplash.com/photo-1550729154-e3abdffadd93?crop=entropy&cs=srgb&fm=jpg&q=85"
+      }
+    },
+    "icons": "Use Lucide React icons (Camera, Hand, Settings, Activity, Zap, Keyboard, Plus, Trash2, RefreshCw)"
+  },
+  "instructions_to_main_agent": [
+    "1. SETUP: Install 'framer-motion' and 'recharts' immediately. These are critical for the requested animations and charts.",
+    "2. THEME: Enforce Dark Mode by default. Add 'dark' class to the html or body tag. Use the provided color palette variables in index.css.",
+    "3. LAYOUT: Create a Layout component that includes the Sidebar and a main content area. All pages should be wrapped in this.",
+    "4. DASHBOARD: Build the 'Overview' page using a Bento Grid layout. Use the 'abstract_purple' image as a subtle background for the 'Model Status' card.",
+    "5. GESTURES: Create a 'GestureLibrary' page. Use the 'GestureCard' component to display static and movement gestures. Use the provided gesture images as thumbnails.",
+    "6. ENROLLMENT: Build the 'AddGesture' flow as a multi-step modal. Step 1: Instructions. Step 2: Camera Preview with 'Face ID' style scanning ring (use Framer Motion). Step 3: Success.",
+    "7. MOCK DATA: Create a 'mockData.js' file to simulate the backend (gestures list, system status, recent logs). Do not leave empty states.",
+    "8. POLISH: Add 'framer-motion' layout transitions between pages. Use 'AnimatePresence' for smooth mounting/unmounting.",
+    "9. ACCESSIBILITY: Ensure all interactive elements have aria-labels and focus states (ring-2 ring-primary)."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "You tend to converge toward generic, 'on distribution' outputs. In frontend design, this creates what users call the 'AI slop' aesthetic. Avoid this: make creative, distinctive frontends that surprise and delight.",
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy",
+    "Use glass-morphism effects with backdrop filters (12-24px blur)",
+    "You MUST NOT apply universal transition. Eg: 'transition: all'. This results in breaking transforms. Always add transitions for specific interactive elements like button, input excluding transforms",
+    "You MUST NOT center align the app container, ie do not add '.App { text-align: center; }' in the css file. This disrupts the human natural reading flow of text",
+    "Always use modern button styles like pill-shaped, or sharp button with interaction animations & color relevant to the app style",
+    "NEVER: use AI assistant Emoji characters like 🤖🧠💭💡🔮🎯📚🎭🎬🎪🎉🎊🎁🎀🎂🍰🎈🎨🎰💰💵💳🏦💎🪙💸🤑📊📈📉💹🔢🏆🥇 etc for icons.",
+    "Every interaction needs micro-animations - hover states, transitions, parallax effects, and entrance animations. Static = dead.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "Subtle grain textures, noise overlays, custom cursors, selection states, and loading animations: separates good from extraordinary.",
+    "Main agent relies on these image URLs. Missing categories (especially sponsor logos) = main agent will use placeholder text which is FORBIDDEN",
+    "Prioritize using pre-existing components from src/components/ui when applicable",
+    "Create new components that match the style and conventions of existing components when needed",
+    "Examine existing components to understand the project's component patterns before creating new ones",
+    "Components MUST use named exports (export const ComponentName = ...)",
+    "Pages MUST use default exports (export default function PageName() {...})",
+    "Use 'sonner' for toasts. Sonner component are located in '/app/src/components/ui/sonner.tsx'"
+  ]
+}
