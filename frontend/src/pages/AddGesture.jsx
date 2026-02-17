@@ -184,76 +184,164 @@ export default function AddGesture() {
                     Record Your Gesture
                   </h2>
                   <p className="text-muted-foreground">
-                    {gestureType === 'static' ? 'Hold your hand steady in the desired pose' : 'Perform the motion 3 times'}
+                    {gestureType === 'static' 
+                      ? 'Move your hand to each highlighted position and hold steady' 
+                      : 'Perform the motion slowly from different angles'}
                   </p>
                 </div>
 
-                {/* Camera Preview with Face ID style */}
-                <div className="relative aspect-video rounded-xl overflow-hidden bg-gradient-to-br from-violet-900/20 via-purple-900/20 to-black border border-white/10">
+                {/* Camera Preview with actual feed mockup */}
+                <div className="relative aspect-video rounded-2xl overflow-hidden bg-gradient-to-br from-gray-900 via-gray-800 to-black border border-white/10">
+                  {/* Mock camera feed background with noise/grain effect */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-blue-900/10 via-transparent to-violet-900/10" />
+                  <div className="absolute inset-0" style={{ 
+                    backgroundImage: 'radial-gradient(circle at 50% 50%, rgba(255,255,255,0.03) 1px, transparent 1px)',
+                    backgroundSize: '4px 4px'
+                  }} />
+                  
+                  {/* Mock hand silhouette (visible when not recording) */}
+                  {!recording && !recordingComplete && (
+                    <motion.div
+                      className="absolute inset-0 flex items-center justify-center"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 0.3 }}
+                    >
+                      <Hand className="w-32 h-32 text-violet-400/50" />
+                    </motion.div>
+                  )}
+
+                  {/* Position guides for static gestures */}
+                  {gestureType === 'static' && (
+                    <>
+                      {[
+                        { id: 1, pos: 'top-1/3 left-1/3', label: '1' },
+                        { id: 2, pos: 'top-1/3 right-1/3', label: '2' },
+                        { id: 3, pos: 'top-1/2 left-1/2', label: '3' },
+                        { id: 4, pos: 'bottom-1/3 left-1/3', label: '4' },
+                        { id: 5, pos: 'bottom-1/3 right-1/3', label: '5' }
+                      ].map((guide) => {
+                        const captureThreshold = (guide.id - 1) * 20;
+                        const isCaptured = recordingProgress > captureThreshold;
+                        const isActive = recording && recordingProgress >= captureThreshold && recordingProgress < captureThreshold + 20;
+                        
+                        return (
+                          <motion.div
+                            key={guide.id}
+                            className={cn(
+                              'absolute -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full border-2 flex items-center justify-center transition-all duration-300',
+                              guide.pos,
+                              isCaptured ? 'bg-green-500/20 border-green-400' :
+                              isActive ? 'bg-violet-500/30 border-violet-400 animate-pulse scale-110' :
+                              'bg-white/5 border-white/20'
+                            )}
+                            animate={{
+                              scale: isActive ? [1, 1.2, 1] : 1,
+                            }}
+                            transition={{ duration: 0.5, repeat: isActive ? Infinity : 0 }}
+                          >
+                            {isCaptured ? (
+                              <Check className="w-6 h-6 text-green-400" />
+                            ) : (
+                              <span className={cn(
+                                'text-sm font-bold',
+                                isActive ? 'text-violet-400' : 'text-white/40'
+                              )}>
+                                {guide.label}
+                              </span>
+                            )}
+                          </motion.div>
+                        );
+                      })}
+                    </>
+                  )}
+
+                  {/* Recording indicator for movement gestures */}
+                  {gestureType === 'movement' && recording && (
+                    <motion.div
+                      className="absolute inset-0 flex items-center justify-center"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                    >
+                      {/* Motion path guide */}
+                      <svg className="w-64 h-64" viewBox="0 0 100 100">
+                        <motion.path
+                          d="M 20,50 Q 50,20 80,50 Q 50,80 20,50"
+                          fill="none"
+                          stroke="rgba(124, 58, 237, 0.5)"
+                          strokeWidth="2"
+                          strokeDasharray="5,5"
+                        />
+                        <motion.circle
+                          cx="50"
+                          cy="50"
+                          r="4"
+                          fill="#7C3AED"
+                          animate={{
+                            cx: [20, 50, 80, 50, 20],
+                            cy: [50, 20, 50, 80, 50]
+                          }}
+                          transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                        />
+                      </svg>
+                    </motion.div>
+                  )}
+
                   {/* Corner brackets */}
-                  <div className="absolute top-6 left-6 w-12 h-12 border-t-2 border-l-2 border-violet-400" />
-                  <div className="absolute top-6 right-6 w-12 h-12 border-t-2 border-r-2 border-violet-400" />
-                  <div className="absolute bottom-6 left-6 w-12 h-12 border-b-2 border-l-2 border-violet-400" />
-                  <div className="absolute bottom-6 right-6 w-12 h-12 border-b-2 border-r-2 border-violet-400" />
+                  <div className="absolute top-6 left-6 w-12 h-12 border-t-2 border-l-2 border-violet-400/50" />
+                  <div className="absolute top-6 right-6 w-12 h-12 border-t-2 border-r-2 border-violet-400/50" />
+                  <div className="absolute bottom-6 left-6 w-12 h-12 border-b-2 border-l-2 border-violet-400/50" />
+                  <div className="absolute bottom-6 right-6 w-12 h-12 border-b-2 border-r-2 border-violet-400/50" />
 
-                  {/* Center circle with progress */}
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                    <svg className="w-48 h-48 -rotate-90">
-                      {/* Background circle */}
-                      <circle
-                        cx="96"
-                        cy="96"
-                        r="90"
-                        fill="none"
-                        stroke="rgba(124, 58, 237, 0.2)"
-                        strokeWidth="4"
-                      />
-                      {/* Progress circle */}
-                      <motion.circle
-                        cx="96"
-                        cy="96"
-                        r="90"
-                        fill="none"
-                        stroke="#7C3AED"
-                        strokeWidth="4"
-                        strokeLinecap="round"
-                        initial={{ strokeDasharray: '565.48', strokeDashoffset: '565.48' }}
-                        animate={{
-                          strokeDashoffset: recording ? `${565.48 - (565.48 * recordingProgress) / 100}` : '565.48'
-                        }}
+                  {/* Progress bar at bottom */}
+                  {recording && (
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10">
+                      <motion.div
+                        className="h-full bg-gradient-to-r from-violet-500 to-purple-500"
+                        initial={{ width: '0%' }}
+                        animate={{ width: `${recordingProgress}%` }}
                         transition={{ duration: 0.3 }}
-                        className="neon-glow"
                       />
-                    </svg>
-
-                    {/* Center icon/text */}
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      {recordingComplete ? (
-                        <motion.div
-                          initial={{ scale: 0 }}
-                          animate={{ scale: 1 }}
-                          transition={{ type: 'spring', stiffness: 200 }}
-                        >
-                          <Check className="w-16 h-16 text-green-400" />
-                        </motion.div>
-                      ) : (
-                        <>
-                          <Camera className="w-12 h-12 text-violet-400 mb-2" />
-                          {recording && (
-                            <span className="text-2xl font-bold text-white">{Math.round(recordingProgress)}%</span>
-                          )}
-                        </>
-                      )}
                     </div>
+                  )}
+
+                  {/* Instruction overlay */}
+                  <div className="absolute top-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full glass-effect">
+                    {recordingComplete ? (
+                      <div className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-green-400" />
+                        <span className="text-sm text-green-400 font-medium">Capture Complete!</span>
+                      </div>
+                    ) : recording ? (
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                        <span className="text-sm text-white font-medium">
+                          {gestureType === 'static' 
+                            ? `Position ${Math.floor(recordingProgress / 20) + 1} of 5` 
+                            : 'Recording motion...'}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-sm text-white font-medium">Position your hand in the frame</span>
+                    )}
                   </div>
 
-                  {/* Instructions */}
-                  {!recordingComplete && (
-                    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full glass-effect">
-                      <p className="text-sm text-white font-medium">
-                        {recording ? 'Hold steady...' : 'Click Start to begin'}
-                      </p>
-                    </div>
+                  {/* Success animation */}
+                  {recordingComplete && (
+                    <motion.div
+                      className="absolute inset-0 flex items-center justify-center bg-green-500/10"
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ duration: 0.5 }}
+                    >
+                      <motion.div
+                        className="w-24 h-24 rounded-full bg-green-500/20 border-4 border-green-400 flex items-center justify-center"
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ type: 'spring', stiffness: 200, delay: 0.2 }}
+                      >
+                        <Check className="w-12 h-12 text-green-400" />
+                      </motion.div>
+                    </motion.div>
                   )}
                 </div>
 
@@ -263,8 +351,23 @@ export default function AddGesture() {
                     onClick={handleStartRecording}
                     className="w-full h-12 bg-violet-500 hover:bg-violet-600 text-white font-semibold neon-glow"
                   >
-                    Start Recording
+                    <Camera className="w-5 h-5 mr-2" />
+                    Start Capture
                   </Button>
+                )}
+
+                {/* Capture tips */}
+                {!recording && !recordingComplete && (
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="flex items-start gap-2 p-3 rounded-lg bg-white/5">
+                      <span className="text-violet-400">💡</span>
+                      <p className="text-muted-foreground">Move slowly through each position</p>
+                    </div>
+                    <div className="flex items-start gap-2 p-3 rounded-lg bg-white/5">
+                      <span className="text-violet-400">✋</span>
+                      <p className="text-muted-foreground">Keep hand visible at all times</p>
+                    </div>
+                  </div>
                 )}
               </div>
             )}
