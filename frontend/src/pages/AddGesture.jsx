@@ -29,6 +29,9 @@ export default function AddGesture() {
     setRecording(true);
     setRecordingProgress(0);
     
+    // Slower capture: 7 seconds total (increase by 1% every 70ms)
+    // For static gestures: captures 5 positions (1.4 seconds each)
+    // For movement gestures: smooth continuous capture
     const interval = setInterval(() => {
       setRecordingProgress(prev => {
         if (prev >= 100) {
@@ -37,9 +40,9 @@ export default function AddGesture() {
           setRecordingComplete(true);
           return 100;
         }
-        return prev + 2;
+        return prev + 1;
       });
-    }, 60);
+    }, 70);
   };
 
   const handleNext = () => {
