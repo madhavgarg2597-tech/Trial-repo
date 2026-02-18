@@ -6,7 +6,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List
+from typing import List, Optional, Dict, Any, Union
 import uuid
 from datetime import datetime, timezone
 
@@ -37,50 +37,7 @@ except ImportError:
     logger.warning("GestureEngine could not be imported. Ensure backend/core/engine.py exists.")
     gesture_engine = None
 
-# --- 3. LIFESPAN EVENTS ---
-@app.on_event("startup")
-async def startup_event():
-    # REMOVED: gesture_engine.start() 
-    # The camera will now stay OFF until a client actually connects.
-    logger.info("Server started. Camera is in STANDBY mode.")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    if gesture_engine:
-        gesture_engine.stop()
-    client.close()
-    logger.info("Server shut down.")
-
-
-# --- 4. WEBSOCKETS (The Fix is Here) ---
-@app.websocket("/ws/video")
-async def video_feed(websocket: WebSocket):
-    await websocket.accept()
-    
-    if not gesture_engine:
-        await websocket.close(reason="Gesture Engine not available")
-        return
-        
-    # START CAMERA ONLY WHEN CONNECTED
-    print("Client connected: Starting Camera...")
-    gesture_engine.start()
-
-    try:
-        async for frame_bytes in gesture_engine.get_frame():
-            await websocket.send_bytes(frame_bytes)
-    except WebSocketDisconnect:
-        logger.info("Client disconnected from video feed")
-    except Exception as e:
-        logger.error(f"WebSocket Error: {e}")
-    finally:
-        # STOP CAMERA IMMEDIATELY WHEN DISCONNECTED
-        print("Client disconnected: Stopping Camera...")
-        gesture_engine.stop()
-
-
-# --- 5. REST API ROUTES ---
-api_router = APIRouter(prefix="/api")
-
+# --- 3. API MODELS ---
 class StatusCheck(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -90,9 +47,59 @@ class StatusCheck(BaseModel):
 class StatusCheckCreate(BaseModel):
     client_name: str
 
+class GestureConfigUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    sensitivity: Optional[float] = None
+    cooldown: Optional[float] = None
+    trigger: Optional[str] = None
+
+# --- 4. API ROUTER SETUP ---
+# CRITICAL: This must be defined BEFORE the routes below
+api_router = APIRouter(prefix="/api")
+
 @api_router.get("/")
 async def root():
     return {"message": "GestureOS Backend Running"}
+
+# --- GESTURE CONFIGURATION ROUTES ---
+
+@api_router.get("/gestures")
+async def get_gestures():
+    """Returns the FULL list of gestures with all settings"""
+    if not gesture_engine:
+        return []
+    
+    gesture_list = []
+    for key, value in gesture_engine.gesture_settings.items():
+        gesture_data = value.copy()
+        gesture_data["id"] = key
+        gesture_list.append(gesture_data)
+    return gesture_list
+
+@api_router.patch("/gestures/{gesture_id}")
+async def update_gesture_config(gesture_id: str, config: GestureConfigUpdate):
+    """Updates any setting: enabled, sensitivity, cooldown, trigger"""
+    if not gesture_engine:
+        return {"error": "Engine not initialized"}
+    
+    update_data = config.model_dump(exclude_unset=True)
+    
+    success = gesture_engine.update_gesture_config(gesture_id, update_data)
+    if success:
+        return {"status": "updated", "id": gesture_id, "data": update_data}
+    return {"error": "Gesture not found"}
+
+@api_router.delete("/gestures/{gesture_id}")
+async def delete_gesture(gesture_id: str):
+    """Soft deletes a gesture"""
+    if not gesture_engine: return {"error": "Engine error"}
+    
+    success = gesture_engine.delete_gesture(gesture_id)
+    if success:
+        return {"status": "deleted", "id": gesture_id}
+    return {"error": "Gesture not found"}
+
+# --- SYSTEM STATUS ROUTES ---
 
 @api_router.post("/status", response_model=StatusCheck)
 async def create_status_check(input: StatusCheckCreate):
@@ -111,9 +118,45 @@ async def get_status_checks():
             check['timestamp'] = datetime.fromisoformat(check['timestamp'])
     return status_checks
 
+# Register the router with the app
 app.include_router(api_router)
 
-# --- 6. MIDDLEWARE ---
+# --- 5. LIFESPAN EVENTS ---
+@app.on_event("startup")
+async def startup_event():
+    logger.info("Server started. Camera is in STANDBY mode.")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    if gesture_engine:
+        gesture_engine.stop()
+    client.close()
+    logger.info("Server shut down.")
+
+# --- 6. WEBSOCKETS ---
+@app.websocket("/ws/video")
+async def video_feed(websocket: WebSocket):
+    await websocket.accept()
+    
+    if not gesture_engine:
+        await websocket.close(reason="Gesture Engine not available")
+        return
+        
+    print("Client connected: Starting Camera...")
+    gesture_engine.start()
+
+    try:
+        async for frame_bytes in gesture_engine.get_frame():
+            await websocket.send_bytes(frame_bytes)
+    except WebSocketDisconnect:
+        logger.info("Client disconnected from video feed")
+    except Exception as e:
+        logger.error(f"WebSocket Error: {e}")
+    finally:
+        print("Client disconnected: Stopping Camera...")
+        gesture_engine.stop()
+
+# --- 7. MIDDLEWARE ---
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

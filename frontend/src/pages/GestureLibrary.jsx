@@ -1,48 +1,88 @@
-import { motion } from 'framer-motion';
-import { useState } from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { GestureCard } from '@/components/gestures/GestureCard';
-import { MovementGestureCard } from '@/components/gestures/MovementGestureCard';
-import { staticGestures, movementGestures } from '@/data/mockData';
-import { Hand, Move, Search } from 'lucide-react';
-import { Input } from '@/components/ui/input';
+import { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Hand, Maximize2, Volume2, Copy, Camera, Type, RotateCcw, 
+  Trash2, Settings2, Zap, Clock, Activity, AlertCircle, RefreshCw
+} from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Slider } from '@/components/ui/slider'; // Ensure you have this or use standard input
+import { Button } from '@/components/ui/button';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
+} from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
 
-export default function GestureLibrary() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [localStaticGestures, setLocalStaticGestures] = useState(staticGestures);
-  const [localMovementGestures, setLocalMovementGestures] = useState(movementGestures);
+export const GestureLibrary = () => {
+  const [gestures, setGestures] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [deleteId, setDeleteId] = useState(null); // ID of gesture to delete
 
-  const handleToggleStatic = (id) => {
-    setLocalStaticGestures(prev =>
-      prev.map(g => g.id === id ? { ...g, enabled: !g.enabled } : g)
-    );
+  // Icon Mapping
+  const iconMap = {
+    volume: Volume2,
+    zoom: Maximize2,
+    swipe: RefreshCw,
+    snap: Hand,
+    copy_paste: Copy,
+    screenshot: Camera,
+    text_mode: Type,
+    circular: RotateCcw
   };
 
-  const handleToggleMovement = (id) => {
-    setLocalMovementGestures(prev =>
-      prev.map(g => g.id === id ? { ...g, enabled: !g.enabled } : g)
-    );
+  // 1. Fetch Gestures
+  const fetchGestures = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/gestures');
+      const data = await res.json();
+      setGestures(data);
+    } catch (err) {
+      console.error("Failed to load gestures", err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleSensitivityChange = (id, value) => {
-    setLocalMovementGestures(prev =>
-      prev.map(g => g.id === id ? { ...g, sensitivity: value } : g)
-    );
+  useEffect(() => {
+    fetchGestures();
+  }, []);
+
+  // 2. Handle Updates (Debounced for sliders)
+  const updateGesture = async (id, field, value) => {
+    // Optimistic UI Update
+    setGestures(prev => prev.map(g => 
+      g.id === id ? { ...g, [field]: value } : g
+    ));
+
+    try {
+      await fetch(`http://localhost:8000/api/gestures/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value })
+      });
+    } catch (err) {
+      console.error("Update failed", err);
+    }
   };
 
-  const filteredStaticGestures = localStaticGestures.filter(g =>
-    g.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    g.action.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // 3. Handle Delete
+  const confirmDelete = async () => {
+    if (!deleteId) return;
+    try {
+      await fetch(`http://localhost:8000/api/gestures/${deleteId}`, {
+        method: 'DELETE'
+      });
+      // Remove from UI
+      setGestures(prev => prev.filter(g => g.id !== deleteId));
+      setDeleteId(null);
+    } catch (err) {
+      console.error("Delete failed", err);
+    }
+  };
 
-  const filteredMovementGestures = localMovementGestures.filter(g =>
-    g.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    g.action.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  if (isLoading) return <div className="p-8 text-center text-muted-foreground">Loading Library...</div>;
 
   return (
-    <div className="min-h-screen p-8">
-      {/* Header */}
+    <div className="min-h-screen p-8 pb-20">
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -51,82 +91,145 @@ export default function GestureLibrary() {
         <h1 className="text-4xl font-bold text-white mb-2" style={{ fontFamily: 'Outfit, sans-serif' }}>
           Gesture Library
         </h1>
-        <p className="text-muted-foreground mb-6">Manage your static and movement gestures</p>
-
-        {/* Search */}
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search gestures..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 bg-[#18181B] border-white/10 focus:border-violet-500/50"
-          />
-        </div>
+        <p className="text-muted-foreground">Manage sensitivity, cooldowns, and active states for your dynamic gestures.</p>
       </motion.div>
 
-      {/* Tabs */}
-      <Tabs defaultValue="static" className="w-full">
-        <TabsList className="mb-8 bg-[#18181B] border border-white/10">
-          <TabsTrigger value="static" className="data-[state=active]:bg-violet-500/20 data-[state=active]:text-violet-400">
-            <Hand className="w-4 h-4 mr-2" />
-            Static Gestures ({filteredStaticGestures.length})
-          </TabsTrigger>
-          <TabsTrigger value="movement" className="data-[state=active]:bg-violet-500/20 data-[state=active]:text-violet-400">
-            <Move className="w-4 h-4 mr-2" />
-            Movement Gestures ({filteredMovementGestures.length})
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="static">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-          >
-            {filteredStaticGestures.map((gesture, index) => (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <AnimatePresence>
+          {gestures.map((gesture, index) => {
+            const Icon = iconMap[gesture.id] || Hand;
+            
+            return (
               <motion.div
                 key={gesture.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ delay: index * 0.05 }}
+                className={cn(
+                  "relative overflow-hidden rounded-xl border p-6 transition-all duration-300 backdrop-blur-md",
+                  gesture.enabled 
+                    ? "bg-[#18181B]/80 border-violet-500/30 shadow-[0_0_20px_rgba(139,92,246,0.05)]" 
+                    : "bg-[#18181B]/40 border-white/5 opacity-70"
+                )}
               >
-                <GestureCard
-                  gesture={gesture}
-                  onToggle={handleToggleStatic}
-                  onEdit={(g) => console.log('Edit', g)}
-                  onDelete={(id) => console.log('Delete', id)}
-                />
-              </motion.div>
-            ))}
-          </motion.div>
-        </TabsContent>
+                {/* Header */}
+                <div className="flex items-start justify-between mb-6">
+                  <div className="flex items-center gap-4">
+                    <div className={cn(
+                      "p-3 rounded-xl transition-colors",
+                      gesture.enabled ? "bg-violet-500/20 text-violet-400" : "bg-white/5 text-muted-foreground"
+                    )}>
+                      <Icon className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-white">{gesture.name}</h3>
+                      <p className="text-xs text-muted-foreground max-w-[200px]">{gesture.description}</p>
+                    </div>
+                  </div>
 
-        <TabsContent value="movement">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="grid grid-cols-1 lg:grid-cols-2 gap-6"
-          >
-            {filteredMovementGestures.map((gesture, index) => (
-              <motion.div
-                key={gesture.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-              >
-                <MovementGestureCard
-                  gesture={gesture}
-                  onToggle={handleToggleMovement}
-                  onSensitivityChange={handleSensitivityChange}
-                  onEdit={(g) => console.log('Edit', g)}
-                  onDelete={(id) => console.log('Delete', id)}
-                />
+                  <div className="flex items-center gap-3">
+                    <Switch
+                      checked={gesture.enabled}
+                      onCheckedChange={(val) => updateGesture(gesture.id, 'enabled', val)}
+                      className="data-[state=checked]:bg-violet-500"
+                    />
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      className="text-red-400 hover:text-red-300 hover:bg-red-500/10 h-8 w-8"
+                      onClick={() => setDeleteId(gesture.id)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Controls */}
+                <div className={cn("space-y-5 transition-opacity", !gesture.enabled && "opacity-40 pointer-events-none")}>
+                  
+                  {/* Sensitivity Slider */}
+                  <div className="space-y-3">
+                    <div className="flex justify-between text-sm">
+                      <div className="flex items-center gap-2 text-white/80">
+                        <Activity className="w-4 h-4 text-blue-400" />
+                        <span>Sensitivity / Confidence</span>
+                      </div>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {Math.round(gesture.sensitivity * 100)}%
+                      </span>
+                    </div>
+                    {/* Using standard range input if Slider component missing */}
+                    <input 
+                      type="range" 
+                      min="0.1" max="1.0" step="0.1"
+                      value={gesture.sensitivity || 0.7}
+                      onChange={(e) => updateGesture(gesture.id, 'sensitivity', parseFloat(e.target.value))}
+                      className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-violet-500"
+                    />
+                  </div>
+
+                  {/* Cooldown Slider */}
+                  <div className="space-y-3">
+                    <div className="flex justify-between text-sm">
+                      <div className="flex items-center gap-2 text-white/80">
+                        <Clock className="w-4 h-4 text-orange-400" />
+                        <span>Cooldown</span>
+                      </div>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {gesture.cooldown}s
+                      </span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="0.1" max="5.0" step="0.1"
+                      value={gesture.cooldown || 1.0}
+                      onChange={(e) => updateGesture(gesture.id, 'cooldown', parseFloat(e.target.value))}
+                      className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                    />
+                  </div>
+
+                  {/* Function/Trigger (Simple Read-only for now, expandable to dropdown) */}
+                  <div className="pt-2 border-t border-white/5">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-muted-foreground flex items-center gap-2">
+                        <Zap className="w-3 h-3" /> Trigger Function
+                      </span>
+                      <span className="px-2 py-1 rounded bg-white/5 border border-white/5 text-xs font-mono text-violet-300">
+                        {gesture.trigger}
+                      </span>
+                    </div>
+                  </div>
+
+                </div>
               </motion.div>
-            ))}
-          </motion.div>
-        </TabsContent>
-      </Tabs>
+            );
+          })}
+        </AnimatePresence>
+      </div>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
+        <DialogContent className="bg-[#18181B] border-white/10 text-white">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-400">
+              <AlertCircle className="w-5 h-5" />
+              Delete Gesture?
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              Are you sure you want to remove this gesture? This action cannot be undone immediately (requires server restart to restore default).
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="ghost" onClick={() => setDeleteId(null)}>Cancel</Button>
+            <Button variant="destructive" className="bg-red-600 hover:bg-red-700" onClick={confirmDelete}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
-}
+};
+
+export default GestureLibrary;

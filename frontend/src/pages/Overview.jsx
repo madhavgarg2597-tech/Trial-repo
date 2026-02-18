@@ -3,6 +3,7 @@ import { Activity, Camera, Zap, TrendingUp, Power } from 'lucide-react';
 import { StatusCard } from '@/components/dashboard/StatusCard';
 import { CameraFeed } from '@/components/dashboard/CameraFeed';
 import { ActivityLog } from '@/components/dashboard/ActivityLog';
+import { GestureLibrary } from '@/components/dashboard/GestureLibrary'; // <--- NEW IMPORT
 import { systemStatus, recentActivity } from '@/data/mockData';
 import { Switch } from '@/components/ui/switch';
 import { useState } from 'react';
@@ -71,8 +72,10 @@ export default function Overview() {
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Camera Feed */}
-        <div className="lg:col-span-2">
+        {/* Camera Feed & Gestures Column */}
+        <div className="lg:col-span-2 space-y-6">
+          
+          {/* Camera Feed Section */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -86,9 +89,25 @@ export default function Overview() {
             </div>
             <CameraFeed isActive={gestureControlEnabled} />
           </motion.div>
+
+          {/* NEW: Gesture Library Section */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
+          >
+            <div className="mb-4">
+              <h2 className="text-xl font-semibold text-white mb-1" style={{ fontFamily: 'Outfit, sans-serif' }}>
+                Active Gestures
+              </h2>
+              <p className="text-sm text-muted-foreground">Toggle individual controls</p>
+            </div>
+            <GestureLibrary />
+          </motion.div>
+
         </div>
 
-        {/* Recent Activity */}
+        {/* Recent Activity Column */}
         <div>
           <motion.div
             initial={{ opacity: 0, y: 20 }}
