@@ -6,6 +6,8 @@ import threading
 import asyncio
 import pyautogui
 import time
+import uuid
+from datetime import datetime
 from collections import deque
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -32,6 +34,10 @@ class GestureEngine:
         self.current_frame = None
         self.processing_thread = None
         
+        # --- LOGGING STATE ---
+        self.activity_log = deque(maxlen=20)
+        self.total_gesture_count = 0 
+
         # 1. Load Model
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         model_path = os.path.join(base_path, 'hand_landmarker.task')
@@ -89,23 +95,17 @@ class GestureEngine:
 
     # --- SCREENSHOT HELPER ---
     def take_screenshot(self):
-        """Saves screenshot to the system's Pictures/Screenshots folder"""
         try:
-            # 1. Detect User's Home Directory
             home_dir = os.path.expanduser("~")
-            
-            # 2. Construct Path (Works on Windows/Mac/Linux)
-            # Tries to find 'Pictures', if not, defaults to Home
+            # Smart Folder Detection
             if os.path.exists(os.path.join(home_dir, "Pictures")):
                 save_dir = os.path.join(home_dir, "Pictures", "Screenshots")
             else:
                 save_dir = os.path.join(home_dir, "Screenshots")
 
-            # 3. Create Folder if it doesn't exist
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
 
-            # 4. Generate Filename and Save
             filename = f"GestureOS_{int(time.time())}.png"
             full_path = os.path.join(save_dir, filename)
             
@@ -141,6 +141,7 @@ class GestureEngine:
             
             try:
                 processed_frame = self._process_frame(frame)
+                # Encode for WebSocket
                 ret, buffer = cv2.imencode('.jpg', processed_frame)
                 if ret:
                     with self.lock:
@@ -181,10 +182,26 @@ class GestureEngine:
             return True
         return False
 
+    # --- LOGGING HELPER ---
+    def _log_activity(self, gesture_name, action_id):
+        # 1. Increment Total Count
+        self.total_gesture_count += 1
+        
+        # 2. Add to Recent History
+        entry = {
+            "id": str(uuid.uuid4()),
+            "gesture": gesture_name,
+            "action": action_id,
+            "time": datetime.now().isoformat()
+        }
+        self.activity_log.appendleft(entry)
+
     # --- ACTION EXECUTION ---
     def trigger_action(self, gesture_id, sub_action=None):
         if not self.gesture_settings[gesture_id]["enabled"]: return
         target_action = self.gesture_settings[gesture_id]["trigger"]
+        gesture_name = self.gesture_settings[gesture_id]["name"]
+        
         if not target_action: return
 
         # Collision Check
@@ -207,7 +224,7 @@ class GestureEngine:
             "snap_left": lambda: pyautogui.hotkey('win', 'left'),
             "snap_right": lambda: pyautogui.hotkey('win', 'right'),
             "close_window": lambda: pyautogui.hotkey('alt', 'f4'),
-            "volume_control": lambda: pyautogui.press(sub_action),
+            "volume_control": lambda: pyautogui.press(sub_action), # Fallback if key is passed
             "zoom_control": lambda: pyautogui.hotkey('ctrl', sub_action),
             "arrow_keys": lambda: self._execute_joystick(sub_action),
             
@@ -219,8 +236,13 @@ class GestureEngine:
         }
 
         if target_action in mapping and self._check_cooldown(gesture_id):
-            mapping[target_action]()
-            print(f"Executed {target_action} via {gesture_id}")
+            try:
+                mapping[target_action]()
+                # Log the success
+                self._log_activity(gesture_name, target_action)
+                print(f"Executed {target_action} via {gesture_id}")
+            except Exception as e:
+                print(f"Action Failed: {e}")
 
     def _execute_joystick(self, direction):
         if direction and direction != "NONE":
@@ -304,12 +326,20 @@ class GestureEngine:
                 if self.gesture_settings["snap"]["enabled"]:
                     frame, snap_action = self.pro_snap.process(frame, hands_data)
                     if snap_action == "RUN_CODE": self.trigger_action("snap")
+                
+                # --- UPDATED VOLUME LOGIC (Supports new Smooth Control) ---
                 if snap_action is None and self.gesture_settings["volume"]["enabled"]:
+                    # 1. Process volume (Directly sets Windows Volume)
                     frame, vol_percent = self.volume_control.process(frame, hand_wrapper, fingers, w, h)
-                    if self.volume_control.volume_mode and abs(vol_percent - self.prev_volume) > 2:
-                        sub = 'volumeup' if vol_percent > self.prev_volume else 'volumedown'
-                        self.trigger_action("volume", sub)
+                    
+                    # 2. Log activity only (Do NOT trigger keys, PyCaw handles it)
+                    # We check for significant change just to avoid spamming logs
+                    if self.volume_control.volume_mode and abs(vol_percent - self.prev_volume) > 5:
                         self.prev_volume = vol_percent
+                        # Log occasionally (every 10th movement)
+                        if self.total_gesture_count % 10 == 0: 
+                            self._log_activity("Volume Control", f"Set to {vol_percent}%")
+
             else:
                 if self.gesture_settings["text_mode"]["enabled"]:
                     if fingers == [0,1,1,0,0]: self.peace_counter += 1
@@ -332,10 +362,9 @@ class GestureEngine:
                             joystick_active = True
 
                 if not joystick_active and not self.text_mode_active:
-                    # UPDATED: Split Copy & Paste Logic
+                    # Split Copy/Paste
                     if self.gesture_settings["copy"]["enabled"] or self.gesture_settings["paste"]["enabled"]:
                         frame, cp_action = self.copy_paste.process(frame, hands_data)
-                        
                         if cp_action == "COPY" and self.gesture_settings["copy"]["enabled"]:
                             self.trigger_action("copy")
                         elif cp_action == "PASTE" and self.gesture_settings["paste"]["enabled"]:
@@ -367,4 +396,4 @@ class GestureEngine:
             cv2.putText(frame, self.circular_display_text, (w//2 - 100,100), cv2.FONT_HERSHEY_SIMPLEX, 1.5, color, 4)
             self.circular_display_timer -= 1
 
-        return frame    
+        return frame

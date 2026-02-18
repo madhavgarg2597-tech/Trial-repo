@@ -6,7 +6,6 @@ const CameraFeed = ({ isSystemActive }) => {
   const [frameSrc, setFrameSrc] = useState(null);
   const wsRef = useRef(null);
 
-  // Manage WebSocket based on prop from Overview
   useEffect(() => {
     if (isSystemActive) {
       connectWebSocket();
@@ -18,8 +17,8 @@ const CameraFeed = ({ isSystemActive }) => {
 
   const connectWebSocket = () => {
     if (wsRef.current) return;
-
-    const ws = new WebSocket('ws://localhost:8000/ws/video');
+    // FIX: Use 127.0.0.1
+    const ws = new WebSocket('ws://127.0.0.1:8000/ws/video');
     ws.binaryType = 'blob';
 
     ws.onmessage = (event) => {
@@ -42,10 +41,11 @@ const CameraFeed = ({ isSystemActive }) => {
     setFrameSrc(null);
   };
 
+  // ... rest of the render (return) code remains the same ...
   return (
     <Card className="relative overflow-hidden bg-black/40 border-white/10 h-full min-h-[400px] flex flex-col shadow-2xl">
-      {/* Simple Status Badge */}
-      <div className="absolute top-4 left-4 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10">
+      {/* ... keeping your existing UI code ... */}
+       <div className="absolute top-4 left-4 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10">
         <div className={`w-2 h-2 rounded-full ${isSystemActive ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
         <span className="text-[10px] font-medium text-white/90 tracking-wider">
           {isSystemActive ? 'LIVE FEED' : 'OFFLINE'}
@@ -54,7 +54,6 @@ const CameraFeed = ({ isSystemActive }) => {
 
       <div className="flex-1 relative flex items-center justify-center bg-[#121214]">
         {isSystemActive ? (
-          // ACTIVE STATE
           frameSrc ? (
             <img 
               src={frameSrc} 
@@ -68,7 +67,6 @@ const CameraFeed = ({ isSystemActive }) => {
             </div>
           )
         ) : (
-          // STANDBY STATE (No Buttons, just info)
           <div className="flex flex-col items-center justify-center text-center p-8 space-y-4">
             <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center ring-1 ring-white/10">
               <VideoOff className="w-6 h-6 text-white/20" />
@@ -86,4 +84,4 @@ const CameraFeed = ({ isSystemActive }) => {
   );
 };
 
-export default CameraFeed;
+export default CameraFeed;  

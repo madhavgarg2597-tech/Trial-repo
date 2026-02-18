@@ -7,7 +7,7 @@ const navigation = [
   { name: 'Overview', href: '/', icon: Home },
   { name: 'Gesture Library', href: '/gestures', icon: Hand },
   { name: 'Add Gesture', href: '/add-gesture', icon: Plus },
-  { name: 'Action Mapping', href: '/actions', icon: Zap },
+  
   { name: 'Retrain Model', href: '/retrain', icon: Activity },
   { name: 'Beta Features', href: '/beta', icon: Layers },
 ];
