@@ -2,22 +2,23 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Hand, Maximize2, Volume2, Copy, Camera, Type, RotateCcw, 
-  Trash2, Settings2, Zap, Clock, Activity, AlertCircle, RefreshCw
+  Trash2, Activity, Clock, Zap, AlertCircle, RefreshCw, Cpu
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
-import { Slider } from '@/components/ui/slider'; // Ensure you have this or use standard input
+import { Slider } from '@/components/ui/slider'; // Uses Shadcn UI slider or standard input
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 export const GestureLibrary = () => {
   const [gestures, setGestures] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [deleteId, setDeleteId] = useState(null); // ID of gesture to delete
+  const [deleteId, setDeleteId] = useState(null);
 
-  // Icon Mapping
   const iconMap = {
     volume: Volume2,
     zoom: Maximize2,
@@ -34,9 +35,10 @@ export const GestureLibrary = () => {
     try {
       const res = await fetch('http://localhost:8000/api/gestures');
       const data = await res.json();
-      setGestures(data);
+      setGestures(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to load gestures", err);
+      toast.error("Failed to connect to backend");
     } finally {
       setIsLoading(false);
     }
@@ -46,12 +48,10 @@ export const GestureLibrary = () => {
     fetchGestures();
   }, []);
 
-  // 2. Handle Updates (Debounced for sliders)
+  // 2. Update Toggle / Slider / Text
   const updateGesture = async (id, field, value) => {
-    // Optimistic UI Update
-    setGestures(prev => prev.map(g => 
-      g.id === id ? { ...g, [field]: value } : g
-    ));
+    // Optimistic Update
+    setGestures(prev => prev.map(g => g.id === id ? { ...g, [field]: value } : g));
 
     try {
       await fetch(`http://localhost:8000/api/gestures/${id}`, {
@@ -61,21 +61,20 @@ export const GestureLibrary = () => {
       });
     } catch (err) {
       console.error("Update failed", err);
+      toast.error("Failed to update setting");
     }
   };
 
-  // 3. Handle Delete
+  // 3. Delete
   const confirmDelete = async () => {
     if (!deleteId) return;
     try {
-      await fetch(`http://localhost:8000/api/gestures/${deleteId}`, {
-        method: 'DELETE'
-      });
-      // Remove from UI
+      await fetch(`http://localhost:8000/api/gestures/${deleteId}`, { method: 'DELETE' });
       setGestures(prev => prev.filter(g => g.id !== deleteId));
       setDeleteId(null);
+      toast.success("Gesture deleted");
     } catch (err) {
-      console.error("Delete failed", err);
+      toast.error("Delete failed");
     }
   };
 
@@ -97,7 +96,7 @@ export const GestureLibrary = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <AnimatePresence>
           {gestures.map((gesture, index) => {
-            const Icon = iconMap[gesture.id] || Hand;
+            const Icon = iconMap[gesture.id] || Cpu;
             
             return (
               <motion.div
@@ -113,7 +112,7 @@ export const GestureLibrary = () => {
                     : "bg-[#18181B]/40 border-white/5 opacity-70"
                 )}
               >
-                {/* Header */}
+                {/* Header with INDIVIDUAL TOGGLE */}
                 <div className="flex items-start justify-between mb-6">
                   <div className="flex items-center gap-4">
                     <div className={cn(
@@ -124,7 +123,9 @@ export const GestureLibrary = () => {
                     </div>
                     <div>
                       <h3 className="text-lg font-semibold text-white">{gesture.name}</h3>
-                      <p className="text-xs text-muted-foreground max-w-[200px]">{gesture.description}</p>
+                      <p className="text-xs text-muted-foreground max-w-[200px] truncate">
+                        {gesture.description || "Custom Gesture Control"}
+                      </p>
                     </div>
                   </div>
 
@@ -145,21 +146,21 @@ export const GestureLibrary = () => {
                   </div>
                 </div>
 
-                {/* Controls */}
-                <div className={cn("space-y-5 transition-opacity", !gesture.enabled && "opacity-40 pointer-events-none")}>
+                {/* Controls (Sensitivity, Cooldown, Trigger) */}
+                <div className={cn("space-y-6 transition-opacity", !gesture.enabled && "opacity-40 pointer-events-none")}>
                   
-                  {/* Sensitivity Slider */}
+                  {/* Sensitivity */}
                   <div className="space-y-3">
                     <div className="flex justify-between text-sm">
                       <div className="flex items-center gap-2 text-white/80">
                         <Activity className="w-4 h-4 text-blue-400" />
-                        <span>Sensitivity / Confidence</span>
+                        <span>Sensitivity</span>
                       </div>
                       <span className="font-mono text-xs text-muted-foreground">
-                        {Math.round(gesture.sensitivity * 100)}%
+                        {Math.round((gesture.sensitivity || 0.5) * 100)}%
                       </span>
                     </div>
-                    {/* Using standard range input if Slider component missing */}
+                    {/* Fallback to range input if Slider component has issues */}
                     <input 
                       type="range" 
                       min="0.1" max="1.0" step="0.1"
@@ -169,7 +170,7 @@ export const GestureLibrary = () => {
                     />
                   </div>
 
-                  {/* Cooldown Slider */}
+                  {/* Cooldown */}
                   <div className="space-y-3">
                     <div className="flex justify-between text-sm">
                       <div className="flex items-center gap-2 text-white/80">
@@ -189,15 +190,21 @@ export const GestureLibrary = () => {
                     />
                   </div>
 
-                  {/* Function/Trigger (Simple Read-only for now, expandable to dropdown) */}
+                  {/* Trigger Function */}
                   <div className="pt-2 border-t border-white/5">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-muted-foreground flex items-center gap-2">
-                        <Zap className="w-3 h-3" /> Trigger Function
-                      </span>
-                      <span className="px-2 py-1 rounded bg-white/5 border border-white/5 text-xs font-mono text-violet-300">
-                        {gesture.trigger}
-                      </span>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground min-w-[100px]">
+                        <Zap className="w-3 h-3" /> Function:
+                      </div>
+                      <Input 
+                        className="h-8 bg-white/5 border-white/10 text-xs font-mono text-violet-300 focus:border-violet-500/50"
+                        value={gesture.trigger || ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setGestures(prev => prev.map(g => g.id === gesture.id ? { ...g, trigger: val } : g));
+                        }}
+                        onBlur={(e) => updateGesture(gesture.id, 'trigger', e.target.value)}
+                      />
                     </div>
                   </div>
 
@@ -208,7 +215,7 @@ export const GestureLibrary = () => {
         </AnimatePresence>
       </div>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Confirmation */}
       <Dialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
         <DialogContent className="bg-[#18181B] border-white/10 text-white">
           <DialogHeader>
@@ -217,7 +224,7 @@ export const GestureLibrary = () => {
               Delete Gesture?
             </DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              Are you sure you want to remove this gesture? This action cannot be undone immediately (requires server restart to restore default).
+              Are you sure you want to remove this gesture?
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">

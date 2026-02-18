@@ -81,7 +81,7 @@ export const CameraFeed = ({ isActive = true, className }) => {
           src={imageSrc}
           alt="Live Gesture Feed"
           className="w-full h-full object-cover" 
-        />
+          />
       )}
 
       {/* 2. STATE: Active but Connecting/Loading */}
