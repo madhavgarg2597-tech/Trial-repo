@@ -54,25 +54,25 @@ class GestureEngine:
         self.two_hand_zoom = TwoHandZoom()
         self.swipe_tabs = SwipeTabs()
 
-        # 3. GESTURE CONFIGURATION
+        # 3. GESTURE CONFIGURATION (Updated with default triggers)
         self.gesture_settings = {
-            "volume": {"name": "Volume Control", "enabled": True},
-            "zoom": {"name": "Two-Hand Zoom", "enabled": True},
-            "swipe": {"name": "Swipe Tabs", "enabled": True},
-            "snap": {"name": "Snap Action", "enabled": True},
-            "copy_paste": {"name": "Copy & Paste", "enabled": True},
-            "screenshot": {"name": "Screenshot", "enabled": True},
-            "text_mode": {"name": "Text Joystick", "enabled": True},
-            "circular": {"name": "Undo/Redo Menu", "enabled": True}
+            "volume": {"name": "Volume Control", "enabled": True, "sensitivity": 0.7, "cooldown": 0.1, "trigger": "volume_control"},
+            "zoom": {"name": "Two-Hand Zoom", "enabled": True, "sensitivity": 0.7, "cooldown": 0.2, "trigger": "zoom_control"},
+            "swipe": {"name": "Swipe Tabs", "enabled": True, "sensitivity": 0.7, "cooldown": 0.8, "trigger": "switch_tabs"},
+            "snap": {"name": "Snap Action", "enabled": True, "sensitivity": 0.7, "cooldown": 1.5, "trigger": "show_desktop"},
+            "copy_paste": {"name": "Copy & Paste", "enabled": True, "sensitivity": 0.7, "cooldown": 1.0, "trigger": "copy"},
+            "screenshot": {"name": "Screenshot", "enabled": True, "sensitivity": 0.7, "cooldown": 2.0, "trigger": "screenshot"},
+            "text_mode": {"name": "Text Joystick", "enabled": True, "sensitivity": 0.7, "cooldown": 0.15, "trigger": "arrow_keys"},
+            "circular": {"name": "Undo/Redo Menu", "enabled": True, "sensitivity": 0.7, "cooldown": 1.0, "trigger": "undo_redo"}
         }
 
         # 4. State Variables
         self.dominant_hand = "Right"
         self.position_buffer = deque(maxlen=20)
         self.alpha = 0.7
-        
         self.prev_volume = 0
         self.prev_zoom = 100
+        self.last_triggered = {key: 0 for key in self.gesture_settings} # Tracker for cooldowns
         
         # Text Mode State
         self.text_mode_active = False 
@@ -81,7 +81,6 @@ class GestureEngine:
         
         # Joystick State
         self.last_joystick_time = 0
-        self.JOYSTICK_COOLDOWN = 0.15
         
         # Circular Menu State
         self.circular_display_text = None
@@ -100,10 +99,98 @@ class GestureEngine:
             self.cap.release()
         print("Camera stopped.")
 
-    def set_gesture_active(self, gesture_key, is_active):
-        if gesture_key in self.gesture_settings:
-            self.gesture_settings[gesture_key]["enabled"] = is_active
-            print(f"Configuration Update: {gesture_key} -> {is_active}")
+    def update_gesture_config(self, gesture_id, config):
+        if gesture_id in self.gesture_settings:
+            for key, value in config.items():
+                if key in self.gesture_settings[gesture_id]:
+                    self.gesture_settings[gesture_id][key] = value
+            return True
+        return False
+
+    def _check_cooldown(self, gesture_id):
+        now = time.time()
+        last = self.last_triggered.get(gesture_id, 0)
+        cooldown = self.gesture_settings[gesture_id]["cooldown"]
+        if now - last > cooldown:
+            self.last_triggered[gesture_id] = now
+            return True
+        return False
+
+    def trigger_action(self, gesture_id, sub_action=None):
+        """
+        Executes the mapped keyboard action with Collision Priority.
+        If multiple gestures are mapped to the same action, only the first 
+        one defined in the configuration will execute.
+        """
+        # 1. Exit if the gesture itself is disabled
+        if not self.gesture_settings[gesture_id]["enabled"]:
+            return
+        
+        target_action = self.gesture_settings[gesture_id]["trigger"]
+        if not target_action:
+            return
+
+        # 2. COLLISION PRIORITY LOGIC
+        # We iterate through the settings to see which gesture is the "primary" owner
+        # of this specific action ID.
+        for key, config in self.gesture_settings.items():
+            if config.get("trigger") == target_action:
+                if key != gesture_id:
+                    # A different gesture (earlier in the dict) already owns this action
+                    print(f"Priority Block: {gesture_id} ignored. {key} is the primary gesture for {target_action}")
+                    return 
+                # If we reached here and key == gesture_id, this gesture is the primary owner
+                break
+
+        # 3. ACTION MAPPING DICTIONARY
+        # Maps the Action IDs from your Frontend Dropdown to PyAutoGUI commands
+        mapping = {
+            # --- General Productivity ---
+            "save_file": lambda: pyautogui.hotkey('ctrl', 's'),
+            "refresh_page": lambda: pyautogui.press('f5'),
+            "copy": lambda: pyautogui.hotkey('ctrl', 'c'),
+            "paste": lambda: pyautogui.hotkey('ctrl', 'v'),
+            
+            # --- Media & Entertainment ---
+            "play_pause": lambda: pyautogui.press('playpause'),
+            "next_track": lambda: pyautogui.press('nexttrack'),
+            "prev_track": lambda: pyautogui.press('prevtrack'),
+            "mute_audio": lambda: pyautogui.press('volumemute'),
+            
+            # --- Window Management ---
+            "show_desktop": lambda: pyautogui.hotkey('win', 'd'),
+            "task_view": lambda: pyautogui.hotkey('win', 'tab'),
+            "snap_left": lambda: pyautogui.hotkey('win', 'left'),
+            "snap_right": lambda: pyautogui.hotkey('win', 'right'),
+            "close_window": lambda: pyautogui.hotkey('alt', 'f4'),
+            
+            # --- Core Fixed Logic (Locked Gestures) ---
+            "volume_control": lambda: pyautogui.press(sub_action), # sub_action is 'volumeup' or 'volumedown'
+            "zoom_control": lambda: pyautogui.hotkey('ctrl', sub_action), # sub_action is '+' or '-'
+            "arrow_keys": lambda: self._execute_joystick(sub_action), # Custom logic for joystick
+            
+            # --- Special Tools ---
+            "screenshot": lambda: pyautogui.screenshot(f"screenshot_{int(time.time())}.png"),
+            "undo_redo": lambda: pyautogui.hotkey('ctrl', sub_action), # sub_action is 'z' or 'y'
+            "switch_tabs": lambda: pyautogui.hotkey('ctrl', sub_action) # sub_action is 'tab' or 'shift','tab'
+        }
+
+        # 4. EXECUTION
+        # Verify action exists and cooldown has passed before pressing keys
+        if target_action in mapping:
+            if self._check_cooldown(gesture_id):
+                try:
+                    mapping[target_action]()
+                    print(f"Gesture {gesture_id} triggered action: {target_action}")
+                except Exception as e:
+                    print(f"Execution Error for {target_action}: {e}")
+
+    def _execute_joystick(self, direction):
+        """Helper to handle the specific shift+arrow logic for text joystick"""
+        if direction and direction != "NONE":
+            pyautogi.keyDown('shift')
+            pyautogui.press(direction.lower())
+            pyautogui.keyUp('shift')
 
     async def get_frame(self):
         while self.running:
@@ -114,208 +201,159 @@ class GestureEngine:
             try:
                 processed_frame = self._process_frame(frame)
             except Exception as e:
-                print(f"Engine Error: {e}")
                 processed_frame = frame
             ret, buffer = cv2.imencode('.jpg', processed_frame)
             yield buffer.tobytes()
             await asyncio.sleep(0.01)
 
-    # --- HELPERS ---
     def _draw_hand(self, image, landmarks):
         h, w, _ = image.shape
-        HAND_CONNECTIONS = [
-            (0,1),(1,2),(2,3),(3,4),(0,5),(5,6),(6,7),(7,8),
-            (5,9),(9,10),(10,11),(11,12),(9,13),(13,14),(14,15),(15,16),
-            (13,17),(17,18),(18,19),(19,20),(0,17)
-        ]
+        HAND_CONNECTIONS = [(0,1),(1,2),(2,3),(3,4),(0,5),(5,6),(6,7),(7,8),(5,9),(9,10),(10,11),(11,12),(9,13),(13,14),(14,15),(15,16),(13,17),(17,18),(18,19),(19,20),(0,17)]
         for connection in HAND_CONNECTIONS:
-            start, end = connection
-            start_pt = (int(landmarks[start].x * w), int(landmarks[start].y * h))
-            end_pt = (int(landmarks[end].x * w), int(landmarks[end].y * h))
+            start_pt = (int(landmarks[connection[0]].x * w), int(landmarks[connection[0]].y * h))
+            end_pt = (int(landmarks[connection[1]].x * w), int(landmarks[connection[1]].y * h))
             cv2.line(image, start_pt, end_pt, (255,255,255), 2)
         for lm in landmarks:
-            cx, cy = int(lm.x * w), int(lm.y * h)
-            cv2.circle(image, (cx,cy), 4, (0,0,255), -1)
+            cv2.circle(image, (int(lm.x * w), int(lm.y * h)), 4, (0,0,255), -1)
 
     def _get_finger_states(self, landmarks, handedness):
         fingers = []
-        # Update Logic: Thumb comparison depends on hand side
         if handedness == "Right":
-            # For Right hand (palm facing camera): Thumb is to the LEFT of index finger
             fingers.append(1 if landmarks[4].x < landmarks[3].x else 0)
         else:
-            # For Left hand: Thumb is to the RIGHT of index finger
             fingers.append(1 if landmarks[4].x > landmarks[3].x else 0)
-
-        fingers.append(1 if landmarks[8].y < landmarks[6].y else 0)
-        fingers.append(1 if landmarks[12].y < landmarks[10].y else 0)
-        fingers.append(1 if landmarks[16].y < landmarks[14].y else 0)
-        fingers.append(1 if landmarks[20].y < landmarks[18].y else 0)
+        for tip, pip in [(8,6), (12,10), (16,14), (20,18)]:
+            fingers.append(1 if landmarks[tip].y < landmarks[pip].y else 0)
         return fingers
 
-    # --- MAIN LOGIC ---
     def _process_frame(self, frame):
-        # ---------------------------------------------------------
-        # 1. REMOVED THE FLIP: Standard Webcam View
-        # frame = cv2.flip(frame, 1)  <-- This line caused the mirror effect
-        # ---------------------------------------------------------
-        
+        frame = cv2.flip(frame, 1)  
         h, w, _ = frame.shape
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-        
         result = self.detector.detect(mp_image)
         
-        hands_data = []
-        handedness_list = []
-        velocity_x = 0
-        velocity_y = 0
+        hands_data, handedness_list = [], []
+        velocity_x, velocity_y = 0, 0
 
-        # Detection
         if result.hand_landmarks:
             for idx, lm_list in enumerate(result.hand_landmarks):
                 self._draw_hand(frame, lm_list)
-                
-                # UPDATED: Handedness Logic for Non-Mirrored View
                 raw_label = result.handedness[idx][0].category_name
-                # In standard view, MediaPipe usually gets it right directly
-                handedness = raw_label 
-                
+                handedness = "Right" if raw_label == "Left" else "Left"
                 handedness_list.append(handedness)
 
                 class LandmarkWrapper:
                     def __init__(self, l): self.landmark = l
-                wrapped = LandmarkWrapper(lm_list)
                 
                 fingers = self._get_finger_states(lm_list, handedness)
-                hands_data.append((wrapped, fingers))
+                hands_data.append((LandmarkWrapper(lm_list), fingers))
                 
-                # Velocity (Center of palm)
                 if idx == 0:
                     palm_ids = [0,5,9,13,17]
                     raw_cx = int(np.mean([lm_list[i].x for i in palm_ids]) * w)
                     raw_cy = int(np.mean([lm_list[i].y for i in palm_ids]) * h)
-
-                    if len(self.position_buffer) > 0:
+                    if self.position_buffer:
                         prev_x, prev_y = self.position_buffer[-1]
                         cx = int(self.alpha * prev_x + (1-self.alpha) * raw_cx)
                         cy = int(self.alpha * prev_y + (1-self.alpha) * raw_cy)
-                    else:
-                        cx, cy = raw_cx, raw_cy
+                    else: cx, cy = raw_cx, raw_cy
                     self.position_buffer.append((cx,cy))
                     if len(self.position_buffer) >= 2:
                         velocity_x = self.position_buffer[-1][0] - self.position_buffer[-2][0]
                         velocity_y = self.position_buffer[-1][1] - self.position_buffer[-2][1]
-        else:
-            self.position_buffer.clear()
+        else: self.position_buffer.clear()
 
-
-        # 2. Gesture Logic
+        # --- GESTURE LOGIC ---
         
-        # --- TWO HAND ZOOM ---
+        # 1. TWO HAND ZOOM
         if len(hands_data) == 2 and self.gesture_settings["zoom"]["enabled"]:
             self.position_buffer.clear()
             frame, zoom_val = self.two_hand_zoom.process(frame, hands_data, w, h)
             if abs(zoom_val - self.prev_zoom) > 2:
-                if zoom_val > self.prev_zoom: pyautogui.hotkey('ctrl', '+')
-                else: pyautogui.hotkey('ctrl', '-')
+                sub = '+' if zoom_val > self.prev_zoom else '-'
+                self.trigger_action("zoom", sub)
                 self.prev_zoom = zoom_val
 
-        # --- SINGLE HAND ---
+        # 2. SINGLE HAND
         elif len(hands_data) == 1:
-            hand_landmarks_wrapper, fingers = hands_data[0]
+            hand_wrapper, fingers = hands_data[0]
             current_hand = handedness_list[0]
 
-            # -------- NON DOMINANT HAND --------
             if current_hand != self.dominant_hand:
-                
                 # SNAP
                 snap_action = None
                 if self.gesture_settings["snap"]["enabled"]:
                     frame, snap_action = self.pro_snap.process(frame, hands_data)
-                    if snap_action == "RUN_CODE": pyautogui.press('win')
+                    if snap_action == "RUN_CODE": self.trigger_action("snap")
                 
                 # VOLUME
                 if snap_action is None and self.gesture_settings["volume"]["enabled"]:
-                    frame, vol_percent = self.volume_control.process(frame, hand_landmarks_wrapper, fingers, w, h)
-                    if self.volume_control.volume_mode:
-                        if abs(vol_percent - self.prev_volume) > 2:
-                            if vol_percent > self.prev_volume: pyautogui.press('volumeup')
-                            else: pyautogui.press('volumedown')
-                            self.prev_volume = vol_percent
+                    frame, vol_percent = self.volume_control.process(frame, hand_wrapper, fingers, w, h)
+                    if self.volume_control.volume_mode and abs(vol_percent - self.prev_volume) > 2:
+                        sub = 'volumeup' if vol_percent > self.prev_volume else 'volumedown'
+                        self.trigger_action("volume", sub)
+                        self.prev_volume = vol_percent
 
-            # -------- DOMINANT HAND --------
             else:
+                # TEXT MODE TOGGLE
                 if self.gesture_settings["text_mode"]["enabled"]:
                     if fingers == [0,1,1,0,0]: self.peace_counter += 1
                     else: self.peace_counter = 0
-
                     if self.peace_counter == self.PEACE_HOLD_FRAMES:
                         self.text_mode_active = not self.text_mode_active
                         self.peace_counter = 0
 
                 joystick_active = False
-
-                # TEXT MODE
                 if self.text_mode_active and self.gesture_settings["text_mode"]["enabled"]:
-                    index_tip = hand_landmarks_wrapper.landmark[8]
+                    index_tip = hand_wrapper.landmark[8]
                     hx, hy = int(index_tip.x * w), int(index_tip.y * h)
-                    center = (w//2, h//2)
-                    direction, _ = compute_text_joystick(hx, hy, center)
+                    direction, _ = compute_text_joystick(hx, hy, (w//2, h//2))
                     cv2.putText(frame, "TEXT MODE", (w-200,40), cv2.FONT_HERSHEY_SIMPLEX, 0.7,(0,255,0),2)
-                    
-                    if direction != "NONE":
-                        now = time.time()
-                        if now - self.last_joystick_time > self.JOYSTICK_COOLDOWN:
-                            key_map = {'UP': 'up', 'DOWN': 'down', 'LEFT': 'left', 'RIGHT': 'right'}
-                            arrow_key = key_map.get(direction)
-                            if arrow_key:
-                                pyautogui.keyDown('shift')
-                                pyautogui.press(arrow_key)
-                                pyautogui.keyUp('shift')
-                                self.last_joystick_time = now
-                                joystick_active = True
+                    if direction != "NONE" and time.time() - self.last_joystick_time > self.gesture_settings["text_mode"]["cooldown"]:
+                        key = {'UP': 'up', 'DOWN': 'down', 'LEFT': 'left', 'RIGHT': 'right'}.get(direction)
+                        if key:
+                            pyautogui.keyDown('shift'); pyautogui.press(key); pyautogui.keyUp('shift')
+                            self.last_joystick_time = time.time()
+                            joystick_active = True
 
-                # NORMAL MODE
                 if not joystick_active and not self.text_mode_active:
-                    
-                    # COPY / PASTE
+                    # COPY/PASTE
                     cp_action = None
                     if self.gesture_settings["copy_paste"]["enabled"]:
                         frame, cp_action = self.copy_paste.process(frame, hands_data)
-                        if cp_action == "COPY": pyautogui.hotkey('ctrl', 'c')
-                        elif cp_action == "PASTE": pyautogui.hotkey('ctrl', 'v')
+                        if cp_action == "COPY": self.trigger_action("copy_paste")
+                        elif cp_action == "PASTE": # You can handle dual trigger IDs or specific logic
+                             pyautogui.hotkey('ctrl', 'v')
 
                     # SCREENSHOT
                     ss_action = None
                     if cp_action is None and self.gesture_settings["screenshot"]["enabled"]:
                         frame, ss_action = self.screenshot.process(frame, hands_data, velocity_y)
-                        if ss_action == "SCREENSHOT": pyautogui.screenshot(f"screenshot_{int(time.time())}.png")
+                        if ss_action == "SCREENSHOT": self.trigger_action("screenshot")
 
                     # UNDO/REDO/SWIPE
                     if cp_action is None and ss_action is None:
-                        index_tip = hand_landmarks_wrapper.landmark[8]
+                        index_tip = hand_wrapper.landmark[8]
                         hx, hy = int(index_tip.x * w), int(index_tip.y * h)
-                        center = (w//2, h//2)
                         
                         circular_cmd = None
                         if self.gesture_settings["circular"]["enabled"]:
-                            circular_cmd = compute_circular_command(hx, hy, center)
+                            circular_cmd = compute_circular_command(hx, hy, (w//2, h//2))
                             if circular_cmd in ["UNDO","REDO"]:
                                 self.circular_display_text = circular_cmd
                                 self.circular_display_timer = self.DISPLAY_FRAMES
-                                if circular_cmd == "UNDO": pyautogui.hotkey('ctrl', 'z')
-                                elif circular_cmd == "REDO": pyautogui.hotkey('ctrl', 'y')
+                                sub = 'z' if circular_cmd == "UNDO" else 'y'
+                                self.trigger_action("circular", sub)
                         
                         if self.circular_display_timer <= 0 and self.gesture_settings["swipe"]["enabled"]:
                             frame, swipe_action = self.swipe_tabs.process(frame, hands_data, velocity_x)
-                            if swipe_action == "NEXT_TAB": pyautogui.hotkey('ctrl', 'tab')
-                            elif swipe_action == "PREV_TAB": pyautogui.hotkey('ctrl', 'shift', 'tab')
+                            if swipe_action == "NEXT_TAB": self.trigger_action("swipe", "tab")
+                            elif swipe_action == "PREV_TAB": self.trigger_action("swipe", ["shift", "tab"])
 
-        # 3. Overlay
         if self.circular_display_timer > 0 and self.circular_display_text:
             color = (0,0,255) if self.circular_display_text == "UNDO" else (0,255,0)
-            cv2.putText(frame, self.circular_display_text, (w//2 - 100,100), cv2.FONT_HERSHEY_SIMPLEX, 1.5,color,4)
+            cv2.putText(frame, self.circular_display_text, (w//2 - 100,100), cv2.FONT_HERSHEY_SIMPLEX, 1.5, color, 4)
             self.circular_display_timer -= 1
 
         return frame
