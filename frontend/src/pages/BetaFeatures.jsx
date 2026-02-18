@@ -1,174 +1,139 @@
-import { motion } from 'framer-motion';
-import { betaFeatures } from '@/data/mockData';
-import { Code2, Focus, Layers, Link, Sparkles } from 'lucide-react';
-import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { MousePointer2, Eye, Mic, AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
-const iconMap = {
-  Code2,
-  Focus,
-  Layers,
-  Link
-};
+const BetaFeatures = () => {
+  const [error, setError] = useState(null);
+  
+  // 1. RESTORED OLD FEATURES + NEW MOUSE
+  const [features, setFeatures] = useState([
+    {
+      id: 'mouse_beta',
+      name: 'Virtual Mouse (Stable)',
+      description: 'New cursor logic: Index to move, Thumb+Middle to Right Click.',
+      icon: MousePointer2,
+      status: 'Beta',
+      enabled: false
+    },
+    {
+      id: 'gaze_tracking',
+      name: 'Gaze Control (Alpha)',
+      description: 'Control the mouse cursor with your eye movements.',
+      icon: Eye,
+      status: 'Alpha',
+      enabled: false
+    },
+    {
+      id: 'voice_cmds',
+      name: 'Voice Commands',
+      description: 'Execute system tasks using voice keywords.',
+      icon: Mic,
+      status: 'Planned',
+      enabled: false
+    }
+  ]);
 
-const getStatusColor = (status) => {
-  switch (status) {
-    case 'active':
-      return 'bg-green-500/10 text-green-400 border-green-500/30';
-    case 'beta':
-      return 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30';
-    case 'coming-soon':
-      return 'bg-violet-500/10 text-violet-400 border-violet-500/30';
-    default:
-      return 'bg-white/10 text-muted-foreground border-white/10';
-  }
-};
+  // 2. SAFE FETCH (Prevents Crashing)
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch('http://localhost:5000/api/status');
+        if (!res.ok) throw new Error('Backend not connected');
+        
+        const data = await res.json();
+        setFeatures(prev => prev.map(f => ({
+          ...f,
+          // Only update if the backend actually sends data for this ID
+          enabled: data.gestures[f.id]?.enabled ?? f.enabled 
+        })));
+        setError(null);
+      } catch (err) {
+        console.error("Backend Error:", err);
+        setError("Could not connect to Gesture Engine. Is the Python server running?");
+      }
+    };
 
-export default function BetaFeatures() {
-  const [features, setFeatures] = useState(betaFeatures);
+    fetchStatus();
+    // Poll every 2 seconds to check connection
+    const interval = setInterval(fetchStatus, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
-  const handleToggle = (id) => {
-    setFeatures(prev =>
-      prev.map(f => f.id === id && f.status !== 'coming-soon' ? { ...f, enabled: !f.enabled } : f)
-    );
+  const toggleFeature = async (id, currentObj) => {
+    const newState = !currentObj.enabled;
+    
+    // Optimistic UI Update
+    setFeatures(prev => prev.map(f => 
+      f.id === id ? { ...f, enabled: newState } : f
+    ));
+
+    try {
+      await fetch('http://localhost:5000/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gesture_id: id,
+          config: { enabled: newState }
+        })
+      });
+    } catch (error) {
+      console.error("Failed to toggle feature:", error);
+      setError("Failed to save setting. Backend disconnected.");
+    }
   };
 
   return (
-    <div className="min-h-screen p-8">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mb-8"
-      >
-        <div className="flex items-center gap-3 mb-2">
-          <Sparkles className="w-8 h-8 text-violet-400" />
-          <h1 className="text-4xl font-bold text-white" style={{ fontFamily: 'Outfit, sans-serif' }}>
-            Beta Features
-          </h1>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight text-white">Labs & Beta</h2>
+          <p className="text-gray-400 mt-2">Test experimental features before they hit the main release.</p>
         </div>
-        <p className="text-muted-foreground">Experimental gestures and advanced capabilities</p>
-      </motion.div>
-
-      {/* Info Banner */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="mb-8 p-4 rounded-xl bg-violet-500/10 border border-violet-500/30"
-      >
-        <div className="flex items-start gap-3">
-          <Sparkles className="w-5 h-5 text-violet-400 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold text-violet-400 mb-1">Early Access Features</p>
-            <p className="text-sm text-muted-foreground">
-              These features are in development and may be unstable. Your feedback helps us improve!
-            </p>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Features Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {features.map((feature, index) => {
-          const Icon = iconMap[feature.icon] || Layers;
-          const isComingSoon = feature.status === 'coming-soon';
-          
-          return (
-            <motion.div
-              key={feature.id}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: index * 0.1 }}
-              className={cn(
-                'relative overflow-hidden rounded-xl border bg-[#18181B] p-6 transition-all duration-300',
-                isComingSoon ? 'border-white/5 opacity-70' : 'border-white/5 hover:border-violet-500/30'
-              )}
-            >
-              {/* Background gradient */}
-              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-violet-500/10 to-transparent rounded-full blur-3xl" />
-              
-              <div className="relative z-10">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="p-3 rounded-xl bg-violet-500/10 border border-violet-500/20">
-                    <Icon className="w-6 h-6 text-violet-400" />
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Badge className={cn('uppercase text-xs font-semibold border', getStatusColor(feature.status))}>
-                      {feature.status.replace('-', ' ')}
-                    </Badge>
-                    {!isComingSoon && (
-                      <Switch
-                        checked={feature.enabled || false}
-                        onCheckedChange={() => handleToggle(feature.id)}
-                        className="data-[state=checked]:bg-violet-500"
-                      />
-                    )}
-                  </div>
-                </div>
-                
-                <h3 className="text-xl font-semibold text-white mb-2" style={{ fontFamily: 'Outfit, sans-serif' }}>
-                  {feature.name}
-                </h3>
-                <p className="text-sm text-muted-foreground mb-4">
-                  {feature.description}
-                </p>
-                
-                {feature.status === 'beta' && (
-                  <div className="pt-4 border-t border-white/10">
-                    <p className="text-xs text-muted-foreground">
-                      ⚠️ Beta feature - may have bugs or limitations
-                    </p>
-                  </div>
-                )}
-                
-                {isComingSoon && (
-                  <div className="pt-4 border-t border-white/10">
-                    <p className="text-xs text-violet-400 font-medium">
-                      🚀 Coming in the next update
-                    </p>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          );
-        })}
       </div>
 
-      {/* Roadmap Section */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.5 }}
-        className="mt-12"
-      >
-        <h2 className="text-2xl font-semibold text-white mb-4" style={{ fontFamily: 'Outfit, sans-serif' }}>
-          What's Next?
-        </h2>
-        <div className="space-y-3">
-          {[
-            'Voice command integration with gesture control',
-            'Multi-hand gesture support for complex commands',
-            'Custom gesture scripting and automation',
-            'Cross-platform gesture sync (mobile + desktop)',
-          ].map((item, index) => (
-            <motion.div
-              key={index}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.6 + index * 0.1 }}
-              className="flex items-center gap-3 p-4 rounded-xl bg-[#18181B] border border-white/5"
-            >
-              <div className="w-8 h-8 rounded-full bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
-                <span className="text-sm font-semibold text-violet-400">{index + 1}</span>
+      {/* ERROR ALERT */}
+      {error && (
+        <Alert variant="destructive" className="bg-red-900/50 border-red-800">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Connection Error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {features.map((feature) => (
+          <Card key={feature.id} className="bg-gray-900/50 border-gray-800 hover:border-purple-500/50 transition-colors">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-xl font-medium text-white flex items-center gap-2">
+                <feature.icon className="h-5 w-5 text-purple-400" />
+                {feature.name}
+              </CardTitle>
+              <Badge variant="outline" className={`
+                ${feature.status === 'Beta' ? 'text-yellow-400 border-yellow-400/30' : 'text-blue-400 border-blue-400/30'}
+              `}>
+                {feature.status}
+              </Badge>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between mt-4">
+                <CardDescription className="text-gray-400 max-w-[80%]">
+                  {feature.description}
+                </CardDescription>
+                <Switch 
+                  checked={feature.enabled}
+                  onCheckedChange={() => toggleFeature(feature.id, feature)}
+                  className="data-[state=checked]:bg-purple-600"
+                />
               </div>
-              <p className="text-sm text-muted-foreground">{item}</p>
-            </motion.div>
-          ))}
-        </div>
-      </motion.div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
     </div>
   );
-}
+};
+
+export default BetaFeatures;
