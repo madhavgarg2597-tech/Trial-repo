@@ -34,10 +34,10 @@ class GestureEngine:
         self.current_frame = None
         self.processing_thread = None
         
-        # --- LOGGING STATE ---
+        # --- RESTORED LOGGING STATE ---
         self.activity_log = deque(maxlen=20)
         self.total_gesture_count = 0 
-
+        
         # 1. Load Model
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         model_path = os.path.join(base_path, 'hand_landmarker.task')
@@ -97,7 +97,6 @@ class GestureEngine:
     def take_screenshot(self):
         try:
             home_dir = os.path.expanduser("~")
-            # Smart Folder Detection
             if os.path.exists(os.path.join(home_dir, "Pictures")):
                 save_dir = os.path.join(home_dir, "Pictures", "Screenshots")
             else:
@@ -141,7 +140,6 @@ class GestureEngine:
             
             try:
                 processed_frame = self._process_frame(frame)
-                # Encode for WebSocket
                 ret, buffer = cv2.imencode('.jpg', processed_frame)
                 if ret:
                     with self.lock:
@@ -182,7 +180,7 @@ class GestureEngine:
             return True
         return False
 
-    # --- LOGGING HELPER ---
+    # --- RESTORED LOGGING HELPER ---
     def _log_activity(self, gesture_name, action_id):
         # 1. Increment Total Count
         self.total_gesture_count += 1
@@ -224,21 +222,18 @@ class GestureEngine:
             "snap_left": lambda: pyautogui.hotkey('win', 'left'),
             "snap_right": lambda: pyautogui.hotkey('win', 'right'),
             "close_window": lambda: pyautogui.hotkey('alt', 'f4'),
-            "volume_control": lambda: pyautogui.press(sub_action), # Fallback if key is passed
+            "volume_control": lambda: pyautogui.press(sub_action),
             "zoom_control": lambda: pyautogui.hotkey('ctrl', sub_action),
             "arrow_keys": lambda: self._execute_joystick(sub_action),
-            
-            # UPDATED: Use the helper method
             "screenshot": lambda: self.take_screenshot(),
-            
             "undo_redo": lambda: pyautogui.hotkey('ctrl', sub_action),
-            "switch_tabs": lambda: pyautogui.hotkey('ctrl', sub_action)
+            "switch_tabs": lambda: pyautogui.hotkey('ctrl', *sub_action) if isinstance(sub_action, list) else pyautogui.hotkey('ctrl', sub_action)
         }
 
         if target_action in mapping and self._check_cooldown(gesture_id):
             try:
                 mapping[target_action]()
-                # Log the success
+                # RESTORED: Log the success
                 self._log_activity(gesture_name, target_action)
                 print(f"Executed {target_action} via {gesture_id}")
             except Exception as e:
@@ -327,16 +322,14 @@ class GestureEngine:
                     frame, snap_action = self.pro_snap.process(frame, hands_data)
                     if snap_action == "RUN_CODE": self.trigger_action("snap")
                 
-                # --- UPDATED VOLUME LOGIC (Supports new Smooth Control) ---
+                # --- UPDATED VOLUME LOGIC (With Logging) ---
                 if snap_action is None and self.gesture_settings["volume"]["enabled"]:
-                    # 1. Process volume (Directly sets Windows Volume)
                     frame, vol_percent = self.volume_control.process(frame, hand_wrapper, fingers, w, h)
                     
-                    # 2. Log activity only (Do NOT trigger keys, PyCaw handles it)
-                    # We check for significant change just to avoid spamming logs
+                    # Log volume changes (throttled)
                     if self.volume_control.volume_mode and abs(vol_percent - self.prev_volume) > 5:
                         self.prev_volume = vol_percent
-                        # Log occasionally (every 10th movement)
+                        # Only log every 10th update to avoid spam
                         if self.total_gesture_count % 10 == 0: 
                             self._log_activity("Volume Control", f"Set to {vol_percent}%")
 
@@ -362,9 +355,9 @@ class GestureEngine:
                             joystick_active = True
 
                 if not joystick_active and not self.text_mode_active:
-                    # Split Copy/Paste
                     if self.gesture_settings["copy"]["enabled"] or self.gesture_settings["paste"]["enabled"]:
                         frame, cp_action = self.copy_paste.process(frame, hands_data)
+                        
                         if cp_action == "COPY" and self.gesture_settings["copy"]["enabled"]:
                             self.trigger_action("copy")
                         elif cp_action == "PASTE" and self.gesture_settings["paste"]["enabled"]:

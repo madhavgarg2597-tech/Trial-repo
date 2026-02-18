@@ -6,6 +6,38 @@
 
 @layer base {
   :root {
+    /* LIGHT MODE DEFAULTS */
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 263 70% 50%; /* Slightly darker violet for light mode contrast */
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 263 85% 65%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 263 70% 50%;
+    --radius: 0.75rem;
+
+    /* Custom Variables (Light) */
+    --bg-obsidian: #ffffff;
+    --bg-surface: #f4f4f5;
+    --bg-surface-hover: #e4e4e7;
+    --text-primary: #18181b;
+    --text-secondary: #71717a;
+  }
+
+  .dark {
+    /* DARK MODE (Your Original Colors) */
     --background: 0 0% 4%;
     --foreground: 0 0% 98%;
     --card: 0 0% 9.4%;
@@ -20,22 +52,18 @@
     --muted-foreground: 0 0% 63.9%;
     --accent: 263 85% 65%;
     --accent-foreground: 0 0% 98%;
-    --destructive: 0 72% 51%;
+    --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
     --border: 0 0% 14.9%;
     --input: 0 0% 14.9%;
     --ring: 263 70% 58%;
-    --radius: 0.75rem;
-    
+
+    /* Custom Variables (Dark) */
     --bg-obsidian: #0A0A0B;
     --bg-surface: #18181B;
     --bg-surface-hover: #27272A;
-    --violet-primary: #7C3AED;
-    --violet-accent: #8B5CF6;
     --text-primary: #FAFAFA;
     --text-secondary: #A1A1AA;
-    --success: #10B981;
-    --error: #EF4444;
   }
 }
 

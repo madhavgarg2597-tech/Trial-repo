@@ -1,79 +1,67 @@
-import { Link, useLocation } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { Home, Hand, Plus, Settings, Activity, Zap, Layers } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
+import { 
+  LayoutDashboard, 
+  Hand, 
+  Settings as SettingsIcon,
+  PlusCircle,
+  BrainCircuit,
+  Sparkles
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const navigation = [
-  { name: 'Overview', href: '/', icon: Home },
-  { name: 'Gesture Library', href: '/gestures', icon: Hand },
-  { name: 'Add Gesture', href: '/add-gesture', icon: Plus },
-  
-  { name: 'Retrain Model', href: '/retrain', icon: Activity },
-  { name: 'Beta Features', href: '/beta', icon: Layers },
-];
-
 export const Sidebar = () => {
-  const location = useLocation();
+  const navItems = [
+    { name: 'Overview', icon: LayoutDashboard, path: '/' },
+    { name: 'Gesture Library', icon: Hand, path: '/gestures' },
+    { name: 'Add Gesture', icon: PlusCircle, path: '/add-gesture' },
+    { name: 'Retrain Model', icon: BrainCircuit, path: '/retrain' },
+    { name: 'Beta Features', icon: Sparkles, path: '/beta' },
+    { name: 'Settings', icon: SettingsIcon, path: '/settings' },
+  ];
 
   return (
-    <motion.aside
-      initial={{ x: -280 }}
-      animate={{ x: 0 }}
-      transition={{ type: 'spring', stiffness: 100, damping: 20 }}
-      className="fixed left-0 top-0 h-screen w-64 glass-effect border-r border-white/10 flex flex-col z-50"
-    >
-      {/* Logo */}
-      <div className="p-6 border-b border-white/10">
-        <Link to="/" className="flex items-center gap-3 group">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center neon-glow">
+    // FIX: Use semantic color classes here
+    <div className="w-64 bg-card border-r border-border flex flex-col transition-colors duration-300">
+      <div className="p-6 border-b border-border">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center">
             <Hand className="w-5 h-5 text-white" />
           </div>
-          <div>
-            <h1 className="text-lg font-bold tracking-tight text-white">GestureOS</h1>
-            <p className="text-xs text-muted-foreground">AI Control System</p>
-          </div>
-        </Link>
+          <span className="text-xl font-bold text-foreground" style={{ fontFamily: 'Outfit, sans-serif' }}>
+            GestureOS
+          </span>
+        </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-1 overflow-y-auto custom-scrollbar">
-        {navigation.map((item) => {
-          const isActive = location.pathname === item.href;
-          return (
-            <Link
-              key={item.name}
-              to={item.href}
-              className={cn(
-                'flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 group relative',
-                isActive
-                  ? 'bg-violet-500/20 text-violet-300 font-medium'
-                  : 'text-muted-foreground hover:text-white hover:bg-white/5'
-              )}
-            >
-              {isActive && (
-                <motion.div
-                  layoutId="activeTab"
-                  className="absolute inset-0 bg-gradient-to-r from-violet-500/20 to-purple-500/20 rounded-lg border border-violet-500/30"
-                  transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                />
-              )}
-              <item.icon className={cn('w-5 h-5 relative z-10', isActive && 'text-violet-400')} />
-              <span className="relative z-10">{item.name}</span>
-            </Link>
-          );
-        })}
+      <nav className="flex-1 p-4 space-y-2">
+        {navItems.map((item) => (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            className={({ isActive }) =>
+              cn(
+                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200",
+                isActive 
+                  ? "bg-violet-500/10 text-violet-400 font-medium" 
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              )
+            }
+          >
+            <item.icon className="w-5 h-5" />
+            <span className="text-sm">{item.name}</span>
+          </NavLink>
+        ))}
       </nav>
 
-      {/* Footer */}
-      <div className="p-4 border-t border-white/10">
-        <Link
-          to="/settings"
-          className="flex items-center gap-3 px-4 py-3 rounded-lg text-muted-foreground hover:text-white hover:bg-white/5 transition-all duration-200"
-        >
-          <Settings className="w-5 h-5" />
-          <span>Settings</span>
-        </Link>
+      <div className="p-4 border-t border-border">
+        <div className="p-4 rounded-xl bg-violet-500/10 border border-violet-500/20">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-xs font-medium text-violet-400">System Active</span>
+          </div>
+          <p className="text-[10px] text-muted-foreground">v2.4.0 (Stable)</p>
+        </div>
       </div>
-    </motion.aside>
+    </div>
   );
 };

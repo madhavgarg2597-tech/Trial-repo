@@ -2,9 +2,10 @@ import { Sidebar } from './Sidebar';
 
 export const Layout = ({ children }) => {
   return (
-    <div className="min-h-screen bg-[#0A0A0B]">
+    // FIX: Use 'bg-background' instead of hardcoded hex
+    <div className="flex h-screen bg-background overflow-hidden transition-colors duration-300">
       <Sidebar />
-      <main className="ml-64 min-h-screen">
+      <main className="flex-1 overflow-y-auto custom-scrollbar">
         {children}
       </main>
     </div>
