@@ -1,67 +1,101 @@
+import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Hand, 
-  Settings as SettingsIcon,
-  PlusCircle,
-  BrainCircuit,
-  Sparkles
+  Settings, 
+  BookOpen, 
+  RefreshCw, 
+  Sparkles,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
-export const Sidebar = () => {
+const Sidebar = ({ collapsed, setCollapsed }) => {
   const navItems = [
-    { name: 'Overview', icon: LayoutDashboard, path: '/' },
-    { name: 'Gesture Library', icon: Hand, path: '/gestures' },
-    { name: 'Add Gesture', icon: PlusCircle, path: '/add-gesture' },
-    { name: 'Retrain Model', icon: BrainCircuit, path: '/retrain' },
-    { name: 'Beta Features', icon: Sparkles, path: '/beta' },
-    { name: 'Settings', icon: SettingsIcon, path: '/settings' },
+    { icon: LayoutDashboard, label: 'Overview', path: '/' },
+    { icon: Hand, label: 'Gesture Library', path: '/library' },
+    { icon: Sparkles, label: 'Labs & Beta', path: '/beta' },
+    { icon: BookOpen, label: 'Add Gesture', path: '/add-gesture' },
+    { icon: RefreshCw, label: 'Retrain Model', path: '/retrain' },
+    { icon: Settings, label: 'Settings', path: '/settings' },
   ];
 
   return (
-    // FIX: Use semantic color classes here
-    <div className="w-64 bg-card border-r border-border flex flex-col transition-colors duration-300">
-      <div className="p-6 border-b border-border">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center">
-            <Hand className="w-5 h-5 text-white" />
+    <div 
+      className={`
+        h-screen bg-gray-900 border-r border-gray-800 text-white 
+        transition-all duration-300 ease-in-out flex flex-col
+        ${collapsed ? 'w-20' : 'w-64'}
+      `}
+    >
+      {/* HEADER */}
+      <div className="p-4 border-b border-gray-800 flex items-center justify-between h-16">
+        {/* Logo - Hidden when collapsed */}
+        {!collapsed && (
+          <div className="flex items-center gap-2 font-bold text-xl text-purple-400 whitespace-nowrap overflow-hidden">
+            <Hand className="h-6 w-6 flex-shrink-0" />
+            <span>GestureOS</span>
           </div>
-          <span className="text-xl font-bold text-foreground" style={{ fontFamily: 'Outfit, sans-serif' }}>
-            GestureOS
-          </span>
-        </div>
+        )}
+        
+        {/* Toggle Button */}
+        <button 
+          onClick={() => setCollapsed(!collapsed)}
+          className={`
+            p-1.5 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors
+            ${collapsed ? 'mx-auto' : ''}
+          `}
+        >
+          {collapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+        </button>
       </div>
 
-      <nav className="flex-1 p-4 space-y-2">
+      {/* NAVIGATION */}
+      <nav className="flex-1 py-6 space-y-2 px-3 overflow-y-auto overflow-x-hidden">
         {navItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200",
-                isActive 
-                  ? "bg-violet-500/10 text-violet-400 font-medium" 
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )
-            }
+            title={collapsed ? item.label : ""} // Tooltip when collapsed
+            className={({ isActive }) => `
+              flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-200 group
+              ${isActive 
+                ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/20' 
+                : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+              }
+              ${collapsed ? 'justify-center' : ''}
+            `}
           >
-            <item.icon className="w-5 h-5" />
-            <span className="text-sm">{item.name}</span>
+            <item.icon size={22} className="min-w-[22px] flex-shrink-0" />
+            
+            {/* Label - Smoothly fades out */}
+            <span 
+              className={`
+                whitespace-nowrap overflow-hidden transition-all duration-300
+                ${collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}
+              `}
+            >
+              {item.label}
+            </span>
           </NavLink>
         ))}
       </nav>
 
-      <div className="p-4 border-t border-border">
-        <div className="p-4 rounded-xl bg-violet-500/10 border border-violet-500/20">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-xs font-medium text-violet-400">System Active</span>
+      {/* FOOTER */}
+      <div className="p-4 border-t border-gray-800">
+        {!collapsed ? (
+          <div className="text-xs text-gray-500 whitespace-nowrap">
+            v1.0.0 Beta
           </div>
-          <p className="text-[10px] text-muted-foreground">v2.4.0 (Stable)</p>
-        </div>
+        ) : (
+          <div className="text-xs text-center text-gray-500">
+            v1
+          </div>
+        )}
       </div>
     </div>
   );
 };
+
+export default Sidebar;
