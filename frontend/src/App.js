@@ -1,8 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-// FIX 1: Default import (No curly braces)
-import Layout from '@/components/layout/Layout'; 
+// MATCHING IMPORT: Uses curly braces because Layout.jsx uses 'export const'
+import { Layout } from '@/components/layout/Layout'; 
 import Overview from '@/pages/Overview';
-import GestureLibrary from '@/pages/GestureLibrary'; // Ensure this matches your file name
+import GestureLibrary from '@/pages/GestureLibrary';
 import AddGesture from '@/pages/AddGesture';
 import RetrainModel from '@/pages/RetrainModel';
 import BetaFeatures from '@/pages/BetaFeatures';
@@ -12,20 +12,20 @@ import '@/App.css';
 
 function App() {
   return (
-    <div className="App">
+    // Global Theme Classes applied here
+    <div className="App min-h-screen bg-background text-foreground transition-colors duration-300">
       <BrowserRouter>
-        <Routes>
-          {/* FIX 2: Layout Route Pattern for <Outlet /> to work */}
-          <Route element={<Layout />}>
+        <Layout>
+          <Routes>
             <Route path="/" element={<Overview />} />
-            <Route path="/library" element={<GestureLibrary />} /> {/* Adjusted path to match Sidebar */}
+            <Route path="/gestures" element={<GestureLibrary />} />
             <Route path="/add-gesture" element={<AddGesture />} />
             <Route path="/retrain" element={<RetrainModel />} />
             <Route path="/beta" element={<BetaFeatures />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
-        </Routes>
+          </Routes>
+        </Layout>
       </BrowserRouter>
       <Toaster />
     </div>

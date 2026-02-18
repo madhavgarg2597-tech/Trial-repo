@@ -3,99 +3,105 @@ import { NavLink } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Hand, 
-  Settings, 
-  BookOpen, 
-  RefreshCw, 
+  Settings as SettingsIcon,
+  PlusCircle,
+  BrainCircuit,
   Sparkles,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-const Sidebar = ({ collapsed, setCollapsed }) => {
+export const Sidebar = ({ collapsed, setCollapsed }) => {
   const navItems = [
-    { icon: LayoutDashboard, label: 'Overview', path: '/' },
-    { icon: Hand, label: 'Gesture Library', path: '/library' },
-    { icon: Sparkles, label: 'Labs & Beta', path: '/beta' },
-    { icon: BookOpen, label: 'Add Gesture', path: '/add-gesture' },
-    { icon: RefreshCw, label: 'Retrain Model', path: '/retrain' },
-    { icon: Settings, label: 'Settings', path: '/settings' },
+    { name: 'Overview', icon: LayoutDashboard, path: '/' },
+    { name: 'Gesture Library', icon: Hand, path: '/gestures' }, // Note: Path matches your App.js route
+    { name: 'Add Gesture', icon: PlusCircle, path: '/add-gesture' },
+    { name: 'Retrain Model', icon: BrainCircuit, path: '/retrain' },
+    { name: 'Beta Features', icon: Sparkles, path: '/beta' },
+    { name: 'Settings', icon: SettingsIcon, path: '/settings' },
   ];
 
   return (
     <div 
-      className={`
-        h-screen bg-gray-900 border-r border-gray-800 text-white 
-        transition-all duration-300 ease-in-out flex flex-col
-        ${collapsed ? 'w-20' : 'w-64'}
-      `}
+      className={cn(
+        "h-screen bg-card border-r border-border flex flex-col transition-all duration-300 ease-in-out",
+        collapsed ? "w-20" : "w-64"
+      )}
     >
       {/* HEADER */}
-      <div className="p-4 border-b border-gray-800 flex items-center justify-between h-16">
-        {/* Logo - Hidden when collapsed */}
+      <div className="p-4 border-b border-border flex items-center justify-between h-16">
         {!collapsed && (
-          <div className="flex items-center gap-2 font-bold text-xl text-purple-400 whitespace-nowrap overflow-hidden">
-            <Hand className="h-6 w-6 flex-shrink-0" />
-            <span>GestureOS</span>
+          <div className="flex items-center gap-2 overflow-hidden whitespace-nowrap">
+            <div className="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center flex-shrink-0">
+              <Hand className="w-5 h-5 text-white" />
+            </div>
+            <span className="text-xl font-bold text-foreground">
+              GestureOS
+            </span>
           </div>
         )}
         
         {/* Toggle Button */}
         <button 
           onClick={() => setCollapsed(!collapsed)}
-          className={`
-            p-1.5 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors
-            ${collapsed ? 'mx-auto' : ''}
-          `}
+          className={cn(
+            "p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors",
+            collapsed ? "mx-auto" : ""
+          )}
         >
           {collapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
         </button>
       </div>
 
       {/* NAVIGATION */}
-      <nav className="flex-1 py-6 space-y-2 px-3 overflow-y-auto overflow-x-hidden">
+      <nav className="flex-1 p-4 space-y-2 overflow-x-hidden">
         {navItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
-            title={collapsed ? item.label : ""} // Tooltip when collapsed
-            className={({ isActive }) => `
-              flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-200 group
-              ${isActive 
-                ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/20' 
-                : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }
-              ${collapsed ? 'justify-center' : ''}
-            `}
+            className={({ isActive }) =>
+              cn(
+                "flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group",
+                isActive 
+                  ? "bg-violet-500/10 text-violet-400 font-medium" 
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                collapsed ? "justify-center" : ""
+              )
+            }
+            title={collapsed ? item.name : ""}
           >
-            <item.icon size={22} className="min-w-[22px] flex-shrink-0" />
+            <item.icon className="w-5 h-5 flex-shrink-0" />
             
-            {/* Label - Smoothly fades out */}
+            {/* Label - Smooth Hide */}
             <span 
-              className={`
-                whitespace-nowrap overflow-hidden transition-all duration-300
-                ${collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}
-              `}
+              className={cn(
+                "whitespace-nowrap overflow-hidden transition-all duration-300",
+                collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
+              )}
             >
-              {item.label}
+              {item.name}
             </span>
           </NavLink>
         ))}
       </nav>
 
       {/* FOOTER */}
-      <div className="p-4 border-t border-gray-800">
+      <div className="p-4 border-t border-border">
         {!collapsed ? (
-          <div className="text-xs text-gray-500 whitespace-nowrap">
-            v1.0.0 Beta
+          <div className="p-4 rounded-xl bg-violet-500/10 border border-violet-500/20">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-xs font-medium text-violet-400">System Active</span>
+            </div>
+            <p className="text-[10px] text-muted-foreground">v2.4.0 (Stable)</p>
           </div>
         ) : (
-          <div className="text-xs text-center text-gray-500">
-            v1
+          <div className="flex justify-center">
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="System Active" />
           </div>
         )}
       </div>
     </div>
   );
 };
-
-export default Sidebar;
