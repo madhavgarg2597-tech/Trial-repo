@@ -259,7 +259,7 @@ class GestureEngine:
 
     def _process_frame(self, frame):
         # 1. MIRROR FIX: Flip the raw pixels first
-        frame = cv2.flip(frame, 1) 
+        frame = cv2.flip(frame, 1)
         
         h, w, _ = frame.shape
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
