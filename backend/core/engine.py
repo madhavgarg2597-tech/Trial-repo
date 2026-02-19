@@ -37,7 +37,11 @@ class GestureEngine:
         
         self.activity_log = deque(maxlen=20)
         self.total_gesture_count = 0 
+        self.custom_actions = {}
+        self.activity_log = deque(maxlen=20)
+        self.total_gesture_count = 0 
         self.custom_actions = {} 
+        self.os_type = "windows"  # <--- NEW: Default to Windows 
         
         # Load Model
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -153,17 +157,24 @@ class GestureEngine:
             except Exception: pass
 
         # 2. Hardcoded Actions (Added interval=0.05 to prevent OS from dropping the keystrokes)
+        # Determine which modifier keys to use based on the OS
+        ctrl_key = 'command' if self.os_type == 'mac' else 'ctrl'
+        win_key = 'command' if self.os_type == 'mac' else 'win'
+
+        # 2. Hardcoded Actions (Dynamic for Mac vs Windows)
         mapping = {
-            "save_file": lambda: pyautogui.hotkey('ctrl', 's', interval=0.05),
-            "copy": lambda: pyautogui.hotkey('ctrl', 'c', interval=0.05),
-            "paste": lambda: pyautogui.hotkey('ctrl', 'v', interval=0.05),
-            "show_desktop": lambda: pyautogui.hotkey('win', 'd', interval=0.05),
+            "save_file": lambda: pyautogui.hotkey(ctrl_key, 's', interval=0.05),
+            "copy": lambda: pyautogui.hotkey(ctrl_key, 'c', interval=0.05),
+            "paste": lambda: pyautogui.hotkey(ctrl_key, 'v', interval=0.05),
+            # Note: Mac uses Cmd+MissionControl (F11 usually) to show desktop. 
+            # We map it to Cmd+F3 or F11, but for now we'll map to win_key + d as placeholder
+            "show_desktop": lambda: pyautogui.hotkey(win_key, 'd', interval=0.05), 
             "volume_control": lambda: pyautogui.press(sub_action),
-            "zoom_control": lambda: pyautogui.hotkey('ctrl', sub_action, interval=0.05),
+            "zoom_control": lambda: pyautogui.hotkey(ctrl_key, sub_action, interval=0.05),
             "arrow_keys": lambda: self._execute_joystick(sub_action),
             "screenshot": lambda: self.take_screenshot(),
-            "undo_redo": lambda: pyautogui.hotkey('ctrl', sub_action, interval=0.05),
-            "switch_tabs": lambda: pyautogui.hotkey('ctrl', *sub_action, interval=0.05) if isinstance(sub_action, list) else pyautogui.hotkey('ctrl', sub_action, interval=0.05)
+            "undo_redo": lambda: pyautogui.hotkey(ctrl_key, sub_action, interval=0.05),
+            "switch_tabs": lambda: pyautogui.hotkey(ctrl_key, *sub_action, interval=0.05) if isinstance(sub_action, list) else pyautogui.hotkey(ctrl_key, sub_action, interval=0.05)
         }
 
         if target_action in mapping and self._check_cooldown(gesture_id):

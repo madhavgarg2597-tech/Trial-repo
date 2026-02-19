@@ -13,18 +13,24 @@ export default function Overview() {
   const [totalCount, setTotalCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
 
+  // --- NEW: OS SYSTEM STATE ---
+  const [osType, setOsType] = useState('windows');
+
   const fetchData = async () => {
     try {
-      // FIX: Use 127.0.0.1
       const statusRes = await fetch('http://127.0.0.1:8000/api/engine/status');
       const statusData = await statusRes.json();
       setIsSystemActive(statusData.running);
       setTotalCount(statusData.count || 0);
 
-      // FIX: Fetch Activity Log
       const activityRes = await fetch('http://127.0.0.1:8000/api/activity');
       const activityData = await activityRes.json();
       if (Array.isArray(activityData)) setActivities(activityData);
+
+      // --- NEW: Fetch Layout Status ---
+      const osRes = await fetch('http://127.0.0.1:8000/api/settings/os');
+      const osData = await osRes.json();
+      setOsType(osData.os_type || 'windows');
 
     } catch (e) {
       console.error("Sync failed");
@@ -41,7 +47,6 @@ export default function Overview() {
     setIsLoading(true);
     const endpoint = checked ? 'start' : 'stop';
     try {
-      // FIX: Use 127.0.0.1
       const res = await fetch(`http://127.0.0.1:8000/api/engine/${endpoint}`, { method: 'POST' });
       if (res.ok) {
         setIsSystemActive(checked);
@@ -62,7 +67,13 @@ export default function Overview() {
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
         <div className="flex items-center justify-between mb-2">
           <div>
-            <h1 className="text-4xl font-bold text-white mb-2" style={{ fontFamily: 'Outfit, sans-serif' }}>Control Dashboard</h1>
+            <div className="flex items-center gap-3 mb-2">
+              <h1 className="text-4xl font-bold text-white" style={{ fontFamily: 'Outfit, sans-serif' }}>Control Dashboard</h1>
+              {/* --- NEW: OS BADGE --- */}
+              <span className="text-xs font-medium px-2.5 py-1 rounded bg-violet-500/10 text-violet-400 border border-violet-500/30">
+                {osType === 'mac' ? 'macOS Layout' : 'Windows Layout'}
+              </span>
+            </div>
             <p className="text-muted-foreground">Monitor and manage your gesture-based desktop control</p>
           </div>
           <div className="flex items-center gap-3 px-5 py-3 rounded-xl glass-effect border border-white/10 shadow-lg bg-[#18181B]/50 backdrop-blur-md">

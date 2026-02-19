@@ -34,6 +34,7 @@ except ImportError:
     logger.warning("GestureEngine could not be imported.")
     gesture_engine = None
 
+
 # --- MODELS ---
 class StatusCheck(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -47,11 +48,15 @@ class GestureConfigUpdate(BaseModel):
     cooldown: Optional[float] = None
     trigger: Optional[str] = None
 
-# NEW: Custom Action Model
 class CustomAction(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     keys: List[str]
+
+# NEW: OS System Settings Model
+class SystemSettings(BaseModel):
+    os_type: str  # "windows" or "mac"
+
 
 # --- ROUTER ---
 api_router = APIRouter(prefix="/api")
@@ -103,7 +108,7 @@ async def update_gesture(gesture_id: str, config: GestureConfigUpdate):
         return {"status": "updated"}
     raise HTTPException(404, "Not found")
 
-# --- NEW: CUSTOM ACTIONS ENDPOINTS ---
+# --- CUSTOM ACTIONS ENDPOINTS ---
 @api_router.post("/custom-actions")
 async def create_custom_action(action: CustomAction):
     if not gesture_engine: raise HTTPException(500, "No Engine")
@@ -128,6 +133,33 @@ async def get_custom_actions():
         except: pass
     return []
 
+
+# --- NEW: SYSTEM SETTINGS ENDPOINTS ---
+@api_router.get("/settings/os")
+async def get_os_setting():
+    if not gesture_engine: return {"os_type": "windows"}
+    return {"os_type": getattr(gesture_engine, 'os_type', 'windows')}
+
+@api_router.patch("/settings/os")
+async def update_os_setting(settings: SystemSettings):
+    if not gesture_engine: raise HTTPException(500, "No Engine")
+    
+    # Update the live python engine
+    gesture_engine.os_type = settings.os_type
+    
+    # Save to database so it remembers on restart
+    if db is not None:
+        try: 
+            await db.global_settings.update_one(
+                {"setting_id": "os_layout"}, 
+                {"$set": {"os_type": settings.os_type}}, 
+                upsert=True
+            )
+        except: pass
+        
+    return {"status": "updated", "os_type": settings.os_type}
+
+
 # --- STATUS ---
 @api_router.post("/status")
 async def create_status(input: StatusCheck):
@@ -141,25 +173,31 @@ async def create_status(input: StatusCheck):
 
 app.include_router(api_router)
 
+
 @app.on_event("startup")
 async def startup_event():
     if gesture_engine is not None and db is not None:
         try:
             await client.admin.command('ping') 
             
-            # Load standard configs
+            # 1. Load standard gesture configs
             cursor = db.gesture_configs.find({})
             async for config in cursor:
                 g_id = config.pop("gesture_id", None)
                 if g_id: gesture_engine.update_gesture_config(g_id, config)
             
-            # Load custom shortcuts into engine on startup
+            # 2. Load custom shortcuts into engine on startup
             cursor_actions = db.custom_actions.find({})
             async for action in cursor_actions:
                 gesture_engine.register_custom_action(action['id'], action['keys'])
                 
-        except Exception:
-            logger.warning("MongoDB unavailable. Using defaults.")
+            # 3. Load Global Settings (OS Type)
+            os_setting = await db.global_settings.find_one({"setting_id": "os_layout"})
+            if os_setting:
+                gesture_engine.os_type = os_setting.get("os_type", "windows")
+                
+        except Exception as e:
+            logger.warning(f"MongoDB unavailable: {e}. Using defaults.")
 
 @app.on_event("shutdown")
 async def shutdown_event():

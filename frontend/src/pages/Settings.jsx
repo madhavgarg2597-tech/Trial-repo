@@ -1,9 +1,9 @@
 import { motion } from 'framer-motion';
-import { Moon, Sun, Bell, Shield, Zap, Sliders } from 'lucide-react';
+import { Moon, Sun, Bell, Shield, Zap, Sliders, Keyboard } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTheme } from "@/components/theme-provider";
 
 export default function Settings() {
@@ -14,6 +14,31 @@ export default function Settings() {
   const [autoRetrain, setAutoRetrain] = useState(false);
   const [detectionSensitivity, setDetectionSensitivity] = useState(75);
   const [confidenceThreshold, setConfidenceThreshold] = useState(80);
+
+  // --- NEW: OS SYSTEM STATE ---
+  const [osType, setOsType] = useState('windows');
+
+  useEffect(() => {
+    fetch('http://127.0.0.1:8000/api/settings/os')
+      .then(res => res.json())
+      .then(data => setOsType(data.os_type || 'windows'))
+      .catch(() => console.error("Failed to fetch OS setting"));
+  }, []);
+
+  const handleOsChange = async (newOs) => {
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/settings/os', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ os_type: newOs })
+      });
+      if (res.ok) {
+        setOsType(newOs);
+      }
+    } catch (err) {
+      console.error("Failed to save layout");
+    }
+  };
 
   return (
     <div className="min-h-screen p-8 bg-background text-foreground transition-colors duration-300">
@@ -56,6 +81,44 @@ export default function Settings() {
                 onCheckedChange={(checked) => setTheme(checked ? 'dark' : 'light')}
                 className="data-[state=checked]:bg-violet-500"
               />
+            </div>
+          </div>
+        </motion.div>
+
+        {/* --- NEW: OS Keyboard Layout --- */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="rounded-xl border border-border bg-card p-6 shadow-sm"
+        >
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-violet-500/10 border border-violet-500/20">
+              <Keyboard className="w-5 h-5 text-violet-400" />
+            </div>
+            <h2 className="text-xl font-semibold" style={{ fontFamily: 'Outfit, sans-serif' }}>Keyboard Layout</h2>
+          </div>
+          
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium mb-1">Operating System</p>
+                <p className="text-xs text-muted-foreground">Select your OS to ensure correct shortcut keys (Ctrl vs Cmd)</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleOsChange('windows')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${osType === 'windows' ? 'bg-violet-600 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+                >
+                  Windows
+                </button>
+                <button
+                  onClick={() => handleOsChange('mac')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${osType === 'mac' ? 'bg-violet-600 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+                >
+                  macOS
+                </button>
+              </div>
             </div>
           </div>
         </motion.div>
