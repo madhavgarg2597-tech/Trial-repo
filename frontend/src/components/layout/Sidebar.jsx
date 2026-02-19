@@ -37,7 +37,7 @@ export const Sidebar = ({ collapsed, setCollapsed }) => {
               <Hand className="w-5 h-5 text-white" />
             </div>
             <span className="text-xl font-bold text-foreground">
-              GestureOS
+              CrossLINK
             </span>
           </div>
         )}
