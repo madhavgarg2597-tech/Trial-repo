@@ -194,7 +194,7 @@ async def websocket_video_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         print("🔌 WEB-SOCKET: Client disconnected")
     except Exception as e:
-        print(f"❌ WEB-SOCKET Error: {e}")
+        print(f"❌ WEB-SOCKET Error: {e}") #oo 
 # --- MIDDLEWARE ---
 app.add_middleware(
     CORSMiddleware,
