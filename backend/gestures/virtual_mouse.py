@@ -17,9 +17,10 @@ class VirtualMouse:
         self.drag_threshold_time = 0.4
         self.SCROLL_SENSITIVITY = 4
         
-        # Smoothing (Higher = Smoother but slower)
-        self.smooth = 5  
-        self.frame_r = 140 # Safe zone padding
+        # Smoothing (Increased from 5 to 7 for buttery movement)
+        self.smooth = 7  
+        # Safe zone padding (Reduced from 140 to 60 so you can reach the bottom easily!)
+        self.frame_r = 60
 
         # --- STATE ---
         self.pinch_start_time = None
@@ -138,9 +139,10 @@ class VirtualMouse:
             curr_x = self.plocX + (x3 - self.plocX) / self.smooth
             curr_y = self.plocY + (y3 - self.plocY) / self.smooth
             
-            # Move Mouse
+            # Move Mouse (MIRROR FIX)
             try:
-                pyautogui.moveTo(self.w_scr - curr_x, curr_y, _pause=False)
+                # Removed 'self.w_scr - curr_x' because the frame is already a mirror!
+                pyautogui.moveTo(curr_x, curr_y, _pause=False)
             except:
                 pass # Ignore edge cases
                 

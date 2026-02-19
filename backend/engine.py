@@ -205,24 +205,33 @@ class GestureEngine:
         target_action = self.gesture_settings[gesture_id]["trigger"]
         gesture_name = self.gesture_settings[gesture_id]["name"]
         
-        # Simplified Trigger Logic
+        # MAC-OPTIMIZED MAPPING WITH DYNAMIC SWIPE TABS
         mapping = {
-            "save_file": lambda: pyautogui.hotkey('ctrl', 's'),
-            "copy": lambda: pyautogui.hotkey('ctrl', 'c'),
-            "paste": lambda: pyautogui.hotkey('ctrl', 'v'),
-            "show_desktop": lambda: pyautogui.hotkey('win', 'd'),
+            "save_file": lambda: pyautogui.hotkey('command', 's'),
+            "copy": lambda: pyautogui.hotkey('command', 'c'),
+            "paste": lambda: pyautogui.hotkey('command', 'v'),
+            "show_desktop": lambda: pyautogui.hotkey('ctrl', 'up'), 
             "volume_control": lambda: pyautogui.press(sub_action),
-            "zoom_control": lambda: pyautogui.hotkey('ctrl', sub_action),
+            "zoom_control": lambda: pyautogui.hotkey('command', sub_action),
             "arrow_keys": lambda: self._execute_joystick(sub_action),
             "screenshot": lambda: self.take_screenshot(),
-            "undo_redo": lambda: pyautogui.hotkey('ctrl', sub_action),
-            "switch_tabs": lambda: pyautogui.hotkey('ctrl', *sub_action) if isinstance(sub_action, list) else pyautogui.hotkey('ctrl', sub_action)
+            
+            # THE 4 VS 5 FINGER MAC ROUTING
+            "switch_tabs_next_tab": lambda: pyautogui.hotkey('command', 'shift', ']'),
+            "switch_tabs_prev_tab": lambda: pyautogui.hotkey('command', 'shift', '['),
+            "switch_tabs_next_app": lambda: pyautogui.hotkey('ctrl', 'right'),
+            "switch_tabs_prev_app": lambda: pyautogui.hotkey('ctrl', 'left'),
         }
 
-        if target_action in mapping and self._check_cooldown(gesture_id):
+        # Check for sub-actions (like 'switch_tabs_next_app')
+        lookup_key = target_action
+        if sub_action and f"{target_action}_{sub_action}" in mapping:
+            lookup_key = f"{target_action}_{sub_action}"
+
+        if lookup_key in mapping and self._check_cooldown(gesture_id):
             try:
-                mapping[target_action]()
-                self._log_activity(gesture_name, target_action)
+                mapping[lookup_key]()
+                self._log_activity(gesture_name, lookup_key)
             except Exception as e: print(f"Action Failed: {e}")
 
     def _execute_joystick(self, direction):
@@ -340,7 +349,9 @@ class GestureEngine:
                     if self.gesture_settings["swipe"]["enabled"] and len(self.position_buffer) >= 2:
                         vx = self.position_buffer[-1][0] - self.position_buffer[-2][0]
                         frame, swipe_action = self.swipe_tabs.process(frame, hands_data, vx)
-                        if swipe_action == "NEXT_TAB": self.trigger_action("swipe", "tab")
-                        elif swipe_action == "PREV_TAB": self.trigger_action("swipe", ["shift", "tab"])
+                        if swipe_action == "NEXT_TAB": self.trigger_action("swipe", "next_tab")
+                        elif swipe_action == "PREV_TAB": self.trigger_action("swipe", "prev_tab")
+                        elif swipe_action == "NEXT_APP": self.trigger_action("swipe", "next_app")
+                        elif swipe_action == "PREV_APP": self.trigger_action("swipe", "prev_app")
 
         return frame
