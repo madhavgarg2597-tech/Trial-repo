@@ -1,3 +1,5 @@
+from fastapi.responses import StreamingResponse
+import time
 from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -30,11 +32,17 @@ except Exception as e:
     db = None
 
 # Initialize Gesture Engine
+import sys
+# FIX: Add current directory to Python path to find 'gestures' folder
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 try:
-    from core.engine import GestureEngine
+    from engine import GestureEngine
     gesture_engine = GestureEngine()
-except ImportError:
-    logger.warning("GestureEngine could not be imported.")
+    print("✅ ENGINE LOADED SUCCESSFULLY")
+except Exception as e:
+    # FIX: Print the actual error so we can see it in the terminal
+    print(f"❌ CRITICAL ENGINE ERROR: {e}")
     gesture_engine = None
 
 # --- MODELS ---
@@ -124,6 +132,25 @@ async def create_status(input: StatusCheck):
         except: pass
     return input
 
+def generate_frames():
+    while True:
+        if gesture_engine and gesture_engine.running:
+            # Grab the latest frame directly from the brain
+            with gesture_engine.lock:
+                frame_data = gesture_engine.current_frame
+
+            if frame_data:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_data + b'\r\n')
+            else:
+                time.sleep(0.01)
+        else:
+            time.sleep(0.1)
+
+@app.get("/video_feed")
+def video_feed():
+    return StreamingResponse(generate_frames(), media_type="multipart/x-mixed-replace; boundary=frame")
+
 app.include_router(api_router)
 
 # --- LIFESPAN EVENTS ---
@@ -148,19 +175,26 @@ async def shutdown_event():
 
 # --- WEBSOCKETS ---
 @app.websocket("/ws/video")
-async def video_feed(websocket: WebSocket):
+async def websocket_video_endpoint(websocket: WebSocket):
     await websocket.accept()
-    if not gesture_engine: await websocket.close(); return
+    print("🔌 WEB-SOCKET: High-Speed Video Pipe Open")
     try:
         while True:
-            if gesture_engine.running:
-                async for frame in gesture_engine.get_video_stream():
-                    await websocket.send_bytes(frame)
-                    if not gesture_engine.running: break
-            else:
-                await asyncio.sleep(0.5)
-    except: pass
-
+            if gesture_engine and gesture_engine.current_frame:
+                with gesture_engine.lock:
+                    frame_data = gesture_engine.current_frame
+                
+                # We send the RAW bytes. No JSON, no encoding overhead.
+                await websocket.send_bytes(frame_data)
+            
+            # This controls your "God Mode" FPS. 
+            # 0.03 = ~33 FPS (Perfect for real-time tracking)
+            await asyncio.sleep(0.03) 
+            
+    except WebSocketDisconnect:
+        print("🔌 WEB-SOCKET: Client disconnected")
+    except Exception as e:
+        print(f"❌ WEB-SOCKET Error: {e}")
 # --- MIDDLEWARE ---
 app.add_middleware(
     CORSMiddleware,

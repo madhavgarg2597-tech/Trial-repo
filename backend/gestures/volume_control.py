@@ -1,158 +1,103 @@
-import numpy as np
 import cv2
-import comtypes
-from ctypes import cast, POINTER
-from comtypes import CLSCTX_ALL
-from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+import numpy as np
+import math
+import platform
+import os
+
+# --- CROSS-PLATFORM SETUP ---
+# Detect the OS (Darwin = Mac, Windows = Windows)
+SYSTEM_OS = platform.system()
+
+# Windows Imports (Only load if we are actually on Windows)
+if SYSTEM_OS == "Windows":
+    try:
+        from comtypes import CLSCTX_ALL
+        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+    except ImportError:
+        pass # We ignore this error on Mac
 
 class VolumeControl:
     def __init__(self):
-        self.volume_mode = False
-        self.start_distance = 0
-        self.start_volume = 0
-        self.current_volume = 0
-        self.volume = None 
-
-    def _init_audio(self):
-        """Initializes Audio with Thread Safety and Fallbacks"""
-        try:
-            # 1. Thread Safety
-            try:
-                comtypes.CoInitialize()
-            except: 
-                pass # Already initialized
-            
-            # 2. Try Standard Method (Pycaw wrapper)
+        self.volume_mode = True
+        self.min_vol = 0
+        self.max_vol = 100
+        
+        # Windows Audio Interface Setup
+        self.interface = None
+        self.volume_object = None
+        
+        if SYSTEM_OS == "Windows":
             try:
                 devices = AudioUtilities.GetSpeakers()
-                interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-                self.volume = cast(interface, POINTER(IAudioEndpointVolume))
-                print("✅ Audio Initialized (Method A)")
-                return
-            except Exception:
-                pass
+                self.interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+                self.volume_object = self.interface.QueryInterface(IAudioEndpointVolume)
+            except:
+                self.interface = None
 
-            # 3. Fallback Method (Direct COM access)
-            print("⚠️ Method A failed, trying Fallback...")
-            enumerator = comtypes.CoCreateInstance(
-                CLSID_MMDeviceEnumerator,
-                IMMDeviceEnumerator,
-                comtypes.CLSCTX_INPROC_SERVER
-            )
-            
-            # Get generic device pointer
-            device_unknown = enumerator.GetDefaultAudioEndpoint(0, 1) # 0=Render, 1=Multimedia
-            
-            # FIX: Cast generic IUnknown to IMMDevice so we can call Activate()
-            device = device_unknown.QueryInterface(IMMDevice)
-            
-            interface = device.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-            self.volume = cast(interface, POINTER(IAudioEndpointVolume))
-            print("✅ Audio Initialized (Method B)")
-
-        except Exception as e:
-            print(f"❌ Audio Init Failed: {e}")
-            self.volume = None
-
-    def get_system_volume(self):
-        """Gets current volume as percentage (0-100)"""
-        if not self.volume: self._init_audio()
-        if self.volume:
+    def set_system_volume(self, volume_percent):
+        """Sets volume for both Mac and Windows"""
+        # Clamp value between 0 and 100
+        volume_percent = max(0, min(100, volume_percent))
+        
+        if SYSTEM_OS == "Windows" and self.volume_object:
             try:
-                return int(round(self.volume.GetMasterVolumeLevelScalar() * 100))
-            except: return 50
-        return 50
-
-    def set_system_volume(self, vol_percent):
-        """Sets volume scalar (0.0 to 1.0)"""
-        if not self.volume: self._init_audio()
-        if self.volume:
+                # Windows uses a scalar from 0.0 to 1.0
+                self.volume_object.SetMasterVolumeLevelScalar(volume_percent / 100, None)
+            except: pass
+            
+        elif SYSTEM_OS == "Darwin": # MacOS
+            # Mac uses AppleScript to set volume (0 to 100)
             try:
-                val = max(0, min(100, vol_percent))
-                self.volume.SetMasterVolumeLevelScalar(val / 100.0, None)
+                # 'osascript' is the built-in Mac command line tool
+                cmd = f"osascript -e 'set volume output volume {int(volume_percent)}'"
+                os.system(cmd)
             except: pass
 
-    def process(self, frame, hand_landmarks, fingers, w, h):
-        if self.volume is None:
-            self._init_audio()
-
-        thumb_tip = hand_landmarks.landmark[4]
-        index_tip = hand_landmarks.landmark[8]
-
-        thumb_x, thumb_y = int(thumb_tip.x * w), int(thumb_tip.y * h)
-        index_x, index_y = int(index_tip.x * w), int(index_tip.y * h)
-
-        distance = np.sqrt((thumb_x - index_x) ** 2 + (thumb_y - index_y) ** 2)
-
-        thumb_up = fingers[0]
-        index_up = fingers[1]
-        middle_up = fingers[2]
-        ring_up = fingers[3]
-        pinky_up = fingers[4]
-
-        # Trigger: Pinch (Thumb + Index) while others are down
-        pinch_condition = (thumb_up and index_up and not middle_up and not ring_up and not pinky_up)
-
-        if pinch_condition and not self.volume_mode:
-            self.volume_mode = True
-            self.start_distance = distance
-            self.start_volume = self.get_system_volume()
-            
-        elif not pinch_condition and self.volume_mode:
-            self.volume_mode = False
-
-        if self.volume_mode:
-            cv2.line(frame, (thumb_x, thumb_y), (index_x, index_y), (255, 0, 255), 2)
-
-            # Sensitivity: Divide by 2.0
-            change = (distance - self.start_distance) / 2.0
-            target_vol = self.start_volume + change
-            
-            self.set_system_volume(target_vol)
-            self.current_volume = int(max(0, min(100, target_vol)))
-
-            # UI
-            cv2.putText(frame, f"Vol: {self.current_volume}%", (index_x, index_y - 20), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 2)
-            
-            cv2.rectangle(frame, (50, 150), (85, 400), (0, 255, 0), 3)
-            vol_bar = np.interp(self.current_volume, [0, 100], [400, 150])
-            cv2.rectangle(frame, (50, int(vol_bar)), (85, 400), (0, 255, 0), cv2.FILLED)
+    def process(self, frame, hand_wrapper, fingers, w, h):
+        # landmarks unpacking
+        lm_list = hand_wrapper.landmark
         
-        return frame, self.current_volume
+        # fingers = [Thumb, Index, Middle, Ring, Pinky]
+        # NEW SAFETY CHECK: 
+        # Only adjust volume if Middle, Ring, and Pinky are CLOSED.
+        # This prevents the 'Open Palm' slip you mentioned.
+        _, _, middle, ring, pinky = fingers
+        
+        if middle or ring or pinky:
+            # Display 'Locked' UI so you know why it's not moving
+            cv2.putText(frame, "VOL LOCKED (Open Hand)", (50, 450), 
+                        cv2.FONT_HERSHEY_COMPLEX, 0.7, (0, 0, 255), 2)
+            return frame, None # Do nothing
+        
+        # Thumb tip (4) and Index tip (8)
+        x1, y1 = int(lm_list[4].x * w), int(lm_list[4].y * h)
+        x2, y2 = int(lm_list[8].x * w), int(lm_list[8].y * h)
+        cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
 
-# --- FALLBACK COM DEFINITIONS ---
-CLSID_MMDeviceEnumerator = comtypes.GUID("{BCDE0395-E52F-467C-8E3D-C4579291692E}")
-IMMDeviceEnumerator_ID = comtypes.GUID("{A95664D2-9614-4F35-A746-DE8DB63617E6}")
-IMMDevice_ID = comtypes.GUID("{D666063F-1587-4E43-81F1-B948E807363F}")
+        # Draw Visuals (Thumb and Index)
+        cv2.circle(frame, (x1, y1), 10, (255, 0, 255), cv2.FILLED)
+        cv2.circle(frame, (x2, y2), 10, (255, 0, 255), cv2.FILLED)
+        cv2.line(frame, (x1, y1), (x2, y2), (255, 0, 255), 3)
 
-class IMMDeviceEnumerator(comtypes.IUnknown):
-    _iid_ = IMMDeviceEnumerator_ID
-    _methods_ = [
-        comtypes.COMMETHOD([], comtypes.HRESULT, "EnumAudioEndpoints",
-                           (["in"], comtypes.c_int, "dataFlow"),
-                           (["in"], comtypes.c_int, "dwStateMask"),
-                           (["out"], POINTER(POINTER(comtypes.IUnknown)), "ppDevices")),
-        comtypes.COMMETHOD([], comtypes.HRESULT, "GetDefaultAudioEndpoint",
-                           (["in"], comtypes.c_int, "dataFlow"),
-                           (["in"], comtypes.c_int, "role"),
-                           (["out"], POINTER(POINTER(comtypes.IUnknown)), "ppEndpoint"))
-    ]
+        # Calculate Distance between fingers
+        length = math.hypot(x2 - x1, y2 - y1)
 
-# NEW: Missing Definition that caused the error
-class IMMDevice(comtypes.IUnknown):
-    _iid_ = IMMDevice_ID
-    _methods_ = [
-        comtypes.COMMETHOD([], comtypes.HRESULT, "Activate",
-                           (["in"], POINTER(comtypes.GUID), "iid"),
-                           (["in"], comtypes.c_int, "dwClsCtx"),
-                           (["in"], POINTER(comtypes.IUnknown), "pActivationParams"),
-                           (["out"], POINTER(POINTER(comtypes.IUnknown)), "ppInterface")),
-        comtypes.COMMETHOD([], comtypes.HRESULT, "OpenPropertyStore",
-                           (["in"], comtypes.c_int, "stgmAccess"),
-                           (["out"], POINTER(POINTER(comtypes.IUnknown)), "ppProperties")),
-        comtypes.COMMETHOD([], comtypes.HRESULT, "GetId",
-                           (["out"], POINTER(comtypes.c_wchar_p), "ppstrId")),
-        comtypes.COMMETHOD([], comtypes.HRESULT, "GetState",
-                           (["out"], POINTER(comtypes.c_int), "pdwState"))
-    ]
+        # Map Distance to Volume (Interpolation)
+        # 30px distance = 0% volume, 250px distance = 100% volume
+        vol_percent = np.interp(length, [30, 250], [0, 100])
+        
+        # UI Bar Height calculation
+        vol_bar = np.interp(length, [30, 250], [400, 150])
+
+        # Smoothness: Round to nearest 5 to prevent jitter
+        smooth_vol = 5 * round(vol_percent / 5)
+
+        # Apply Volume to System
+        self.set_system_volume(smooth_vol)
+
+        # Draw Volume Bar on Screen
+        cv2.rectangle(frame, (50, 150), (85, 400), (255, 0, 0), 3)
+        cv2.rectangle(frame, (50, int(vol_bar)), (85, 400), (255, 0, 0), cv2.FILLED)
+        cv2.putText(frame, f'{int(smooth_vol)} %', (40, 450), cv2.FONT_HERSHEY_COMPLEX, 1, (255, 0, 0), 3)
+
+        return frame, smooth_vol

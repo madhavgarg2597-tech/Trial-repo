@@ -40,7 +40,7 @@ class GestureEngine:
         self.total_gesture_count = 0 
         
         # 1. Load Model
-        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base_path = os.path.dirname(os.path.abspath(__file__))
         model_path = os.path.join(base_path, 'hand_landmarker.task')
         if not os.path.exists(model_path): print(f"ERROR: Model not found at {model_path}")
         
@@ -93,15 +93,50 @@ class GestureEngine:
 
     def start(self):
         if self.running: return
+        # Open Camera 0
         self.cap = cv2.VideoCapture(0)
-        # OPTIMIZE CAMERA FOR MOUSE
+        
+        # LAG KILLER 1: Minimize hardware buffer
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1) 
+        
+        # LAG KILLER 2: Lower Resolution to reduce CPU load
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         
+        if not self.cap.isOpened():
+             print("❌ ERROR: Could not open Camera.")
+             return
         self.running = True
-        self.processing_thread = threading.Thread(target=self._run_loop, daemon=True)
-        self.processing_thread.start()
-        print("✅ Gesture Engine started.")
+        self.thread = threading.Thread(target=self._run_loop, daemon=True)
+        self.thread.start()
+
+    def _run_loop(self):
+        print("🚀 Lag-Killer Engine Started")
+        while self.running and self.cap.isOpened():
+            success, frame = self.cap.read()
+            self.cap.grab() 
+            
+            if not success:
+                time.sleep(0.01)
+                continue
+            
+            try:
+                
+                if self.detector:
+                    processed_frame = self._process_frame(frame)
+                else:
+                    processed_frame = frame
+
+                ret, buffer = cv2.imencode('.jpg', processed_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 40])
+                
+                if ret:
+                    with self.lock: 
+                        self.current_frame = buffer.tobytes()
+            
+            except Exception as e: 
+                print(f"❌ Processing Error: {e}")
+                    
+            time.sleep(0.001)
 
     def stop(self):
         self.running = False
@@ -110,18 +145,32 @@ class GestureEngine:
         print("🛑 Gesture Engine stopped.")
 
     def _run_loop(self):
+        print("📷 Camera Loop Started")
         while self.running and self.cap.isOpened():
             success, frame = self.cap.read()
             if not success:
-                time.sleep(0.1)
+                print("⚠️ Camera read failed (Frame is empty)")
+                time.sleep(0.5)
                 continue
+            
             try:
-                processed_frame = self._process_frame(frame)
-                ret, buffer = cv2.imencode('.jpg', processed_frame)
+                # If detector failed to load, just show raw video
+                if self.detector:
+                    processed_frame = self._process_frame(frame)
+                else:
+                    processed_frame = frame
+
+                # FIX: Compress image to 50% quality (Much faster transfer)
+                # The '50' here creates smaller data packets, eliminating lag
+                ret, buffer = cv2.imencode('.jpg', processed_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
+                
                 if ret:
                     with self.lock: self.current_frame = buffer.tobytes()
-            except Exception as e: print(f"Frame Processing Error: {e}")
-            time.sleep(0.01)
+            except Exception as e: 
+                print(f"❌ Frame Processing Error: {e}")
+            
+            # Reduce sleep time to practically zero for maximum FPS
+            time.sleep(0.001)
 
     async def get_video_stream(self):
         while self.running:
@@ -209,35 +258,47 @@ class GestureEngine:
         return fingers
 
     def _process_frame(self, frame):
-        frame = cv2.flip(frame, 1)  
+        # 1. MIRROR FIX: Flip the raw pixels first
+        frame = cv2.flip(frame, 1) 
+        
         h, w, _ = frame.shape
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        
+        # 2. DETECTION: Run on the mirrored image
         result = self.detector.detect(mp_image)
         
         hands_data, handedness_list = [], []
 
         if result.hand_landmarks:
             for idx, lm_list in enumerate(result.hand_landmarks):
-                self._draw_hand(frame, lm_list)
+                # 3. LABEL FIX: Swap Left/Right so math stays fast
                 raw_label = result.handedness[idx][0].category_name
                 handedness = "Right" if raw_label == "Left" else "Left"
                 handedness_list.append(handedness)
 
+                # Wrap landmarks for compatibility with gesture modules
                 class LandmarkWrapper:
                     def __init__(self, l): self.landmark = l
                 
+                # 4. DATA FIX: This was missing! We must fill hands_data
                 fingers = self._get_finger_states(lm_list, handedness)
-                hands_data.append((LandmarkWrapper(lm_list), fingers))
+                hand_wrapper = LandmarkWrapper(lm_list)
+                hands_data.append((hand_wrapper, fingers))
 
-                # --- BETA MOUSE CHECK (Right Hand Only) ---
+                # Visuals: Drawn on flipped frame, so text is readable
+                self._draw_hand(frame, lm_list)
+                cv2.putText(frame, f"{handedness} Hand", 
+                            (int(lm_list[0].x * w), int(lm_list[0].y * h) - 20), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+                # --- BETA MOUSE CHECK ---
                 if handedness == self.dominant_hand and self.gesture_settings["mouse_beta"]["enabled"]:
                     frame, mouse_action = self.virtual_mouse.process(frame, lm_list, handedness, w, h)
-                    # Skip other gestures if mouse is active
                     continue 
 
-                # --- POSITION BUFFER (Only if Mouse is OFF) ---
-                if not self.gesture_settings["mouse_beta"]["enabled"] and idx == 0:
+                # --- POSITION BUFFER (For Swipes) ---
+                if idx == 0:
                     palm_ids = [0,5,9,13,17]
                     raw_cx = int(np.mean([lm_list[i].x for i in palm_ids]) * w)
                     raw_cy = int(np.mean([lm_list[i].y for i in palm_ids]) * h)
@@ -250,41 +311,36 @@ class GestureEngine:
         
         else: self.position_buffer.clear()
 
-        # --- OTHER GESTURES (Volume, Zoom, etc.) ---
-        # Only run these if MOUSE IS OFF to prevent conflicts
+        # --- GESTURE EXECUTION (Now with working hands_data) ---
         if not self.gesture_settings["mouse_beta"]["enabled"]:
+            # Two-Hand Zoom
             if len(hands_data) == 2 and self.gesture_settings["zoom"]["enabled"]:
-                self.position_buffer.clear()
                 frame, zoom_val = self.two_hand_zoom.process(frame, hands_data, w, h)
                 if abs(zoom_val - self.prev_zoom) > 2:
                     sub = '+' if zoom_val > self.prev_zoom else '-'
                     self.trigger_action("zoom", sub)
                     self.prev_zoom = zoom_val
 
+            # Single Hand Gestures
             elif len(hands_data) == 1:
                 hand_wrapper, fingers = hands_data[0]
                 current_hand = handedness_list[0]
                 
-                # Non-Dominant Hand = Volume
+                # Volume Control
                 if current_hand != self.dominant_hand and self.gesture_settings["volume"]["enabled"]:
                     frame, vol_percent = self.volume_control.process(frame, hand_wrapper, fingers, w, h)
-                    if self.volume_control.volume_mode and abs(vol_percent - self.prev_volume) > 5:
+                    if vol_percent is not None and abs(vol_percent - self.prev_volume) > 5:
                         self.prev_volume = vol_percent
-                        if self.total_gesture_count % 10 == 0: 
-                            self._log_activity("Volume Control", f"Set to {vol_percent}%")
 
-                # Dominant Hand = Swipes, Snaps, etc.
+                # Swipe/Snap Control
                 elif current_hand == self.dominant_hand:
-                    if self.gesture_settings["snap"]["enabled"]:
-                        frame, snap_action = self.pro_snap.process(frame, hands_data)
-                        if snap_action == "RUN_CODE": self.trigger_action("snap")
+                    frame, snap_action = self.pro_snap.process(frame, hands_data)
+                    if snap_action == "RUN_CODE": self.trigger_action("snap")
 
-                    if self.gesture_settings["swipe"]["enabled"]:
-                         # Velocity calculation needs buffer
-                         if len(self.position_buffer) >= 2:
-                             vx = self.position_buffer[-1][0] - self.position_buffer[-2][0]
-                             frame, swipe_action = self.swipe_tabs.process(frame, hands_data, vx)
-                             if swipe_action == "NEXT_TAB": self.trigger_action("swipe", "tab")
-                             elif swipe_action == "PREV_TAB": self.trigger_action("swipe", ["shift", "tab"])
+                    if self.gesture_settings["swipe"]["enabled"] and len(self.position_buffer) >= 2:
+                        vx = self.position_buffer[-1][0] - self.position_buffer[-2][0]
+                        frame, swipe_action = self.swipe_tabs.process(frame, hands_data, vx)
+                        if swipe_action == "NEXT_TAB": self.trigger_action("swipe", "tab")
+                        elif swipe_action == "PREV_TAB": self.trigger_action("swipe", ["shift", "tab"])
 
         return frame
