@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, APIRouter, WebSocket, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -11,7 +11,6 @@ import uuid
 from datetime import datetime, timezone
 import asyncio
 
-# --- 1. SETUP & CONFIG ---
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
@@ -20,16 +19,14 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# Database Connection (Lowered timeout to 1s to prevent "Unavailable" lag)
 mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
 try:
     client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=1000)
     db = client[os.environ.get('DB_NAME', 'gesture_db')]
-except Exception as e:
+except Exception:
     client = None
     db = None
 
-# Initialize Gesture Engine
 try:
     from core.engine import GestureEngine
     gesture_engine = GestureEngine()
@@ -50,47 +47,41 @@ class GestureConfigUpdate(BaseModel):
     cooldown: Optional[float] = None
     trigger: Optional[str] = None
 
+# NEW: Custom Action Model
+class CustomAction(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    keys: List[str]
+
 # --- ROUTER ---
 api_router = APIRouter(prefix="/api")
 
 @api_router.get("/")
 async def root(): return {"message": "GestureOS Backend Running"}
 
-# --- ENGINE CONTROL & STATS (FIXED) ---
-
 @api_router.get("/engine/status")
 async def get_engine_status():
-    if not gesture_engine:
-        return {"running": False, "error": "Engine not initialized", "count": 0}
-    
-    # FIX: Return the real total count from the engine
+    if not gesture_engine: return {"running": False, "count": 0}
     total_count = getattr(gesture_engine, 'total_gesture_count', 0)
     return {"running": gesture_engine.running, "count": total_count}
 
 @api_router.post("/engine/start")
 async def start_engine():
     if not gesture_engine: raise HTTPException(500, "No Engine")
-    if not gesture_engine.running:
-        gesture_engine.start()
-        return {"status": "started"}
-    return {"status": "already_running"}
+    if not gesture_engine.running: gesture_engine.start()
+    return {"status": "started"}
 
 @api_router.post("/engine/stop")
 async def stop_engine():
     if not gesture_engine: raise HTTPException(500, "No Engine")
-    if gesture_engine.running:
-        gesture_engine.stop()
-        return {"status": "stopped"}
-    return {"status": "already_stopped"}
+    if gesture_engine.running: gesture_engine.stop()
+    return {"status": "stopped"}
 
-# --- ACTIVITY LOG (NEW ROUTE) ---
 @api_router.get("/activity")
 async def get_activity_log():
     if not gesture_engine: return []
-    # FIX: Return the live log from the engine
     return list(getattr(gesture_engine, 'activity_log', []))
 
-# --- GESTURE CONFIGURATION ---
 @api_router.get("/gestures")
 async def get_gestures():
     if not gesture_engine: return []
@@ -107,11 +98,35 @@ async def update_gesture(gesture_id: str, config: GestureConfigUpdate):
     data = config.model_dump(exclude_unset=True)
     if gesture_engine.update_gesture_config(gesture_id, data):
         if db is not None:
-            try:
-                await db.gesture_configs.update_one({"gesture_id": gesture_id}, {"$set": data}, upsert=True)
+            try: await db.gesture_configs.update_one({"gesture_id": gesture_id}, {"$set": data}, upsert=True)
             except: pass
         return {"status": "updated"}
     raise HTTPException(404, "Not found")
+
+# --- NEW: CUSTOM ACTIONS ENDPOINTS ---
+@api_router.post("/custom-actions")
+async def create_custom_action(action: CustomAction):
+    if not gesture_engine: raise HTTPException(500, "No Engine")
+    
+    # 1. Register in the live python engine
+    gesture_engine.register_custom_action(action.id, action.keys)
+    
+    # 2. Save permanently to DB
+    if db is not None:
+        try: await db.custom_actions.insert_one(action.model_dump())
+        except: pass
+        
+    return {"status": "created", "id": action.id}
+
+@api_router.get("/custom-actions")
+async def get_custom_actions():
+    if db is not None:
+        try:
+            cursor = db.custom_actions.find({}, {'_id': 0})
+            actions = await cursor.to_list(length=100)
+            return actions
+        except: pass
+    return []
 
 # --- STATUS ---
 @api_router.post("/status")
@@ -126,18 +141,23 @@ async def create_status(input: StatusCheck):
 
 app.include_router(api_router)
 
-# --- LIFESPAN EVENTS ---
 @app.on_event("startup")
 async def startup_event():
-    # FIX: Explicit boolean checks to avoid NotImplementedError
     if gesture_engine is not None and db is not None:
         try:
             await client.admin.command('ping') 
-            logger.info("Connected to MongoDB.")
+            
+            # Load standard configs
             cursor = db.gesture_configs.find({})
             async for config in cursor:
                 g_id = config.pop("gesture_id", None)
                 if g_id: gesture_engine.update_gesture_config(g_id, config)
+            
+            # Load custom shortcuts into engine on startup
+            cursor_actions = db.custom_actions.find({})
+            async for action in cursor_actions:
+                gesture_engine.register_custom_action(action['id'], action['keys'])
+                
         except Exception:
             logger.warning("MongoDB unavailable. Using defaults.")
 
@@ -146,7 +166,6 @@ async def shutdown_event():
     if gesture_engine: gesture_engine.stop()
     if client: client.close()
 
-# --- WEBSOCKETS ---
 @app.websocket("/ws/video")
 async def video_feed(websocket: WebSocket):
     await websocket.accept()
@@ -157,15 +176,7 @@ async def video_feed(websocket: WebSocket):
                 async for frame in gesture_engine.get_video_stream():
                     await websocket.send_bytes(frame)
                     if not gesture_engine.running: break
-            else:
-                await asyncio.sleep(0.5)
+            else: await asyncio.sleep(0.5)
     except: pass
 
-# --- MIDDLEWARE ---
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
