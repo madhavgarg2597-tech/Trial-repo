@@ -33,7 +33,7 @@ except Exception as e:
 
 # Initialize Gesture Engine
 import sys
-# FIX: Add current directory to Python path to find 'gestures' folder
+# Add current directory to Python path to find 'gestures' folder
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 try:
@@ -41,7 +41,6 @@ try:
     gesture_engine = GestureEngine()
     print("✅ ENGINE LOADED SUCCESSFULLY")
 except Exception as e:
-    # FIX: Print the actual error so we can see it in the terminal
     print(f"❌ CRITICAL ENGINE ERROR: {e}")
     gesture_engine = None
 
@@ -58,20 +57,25 @@ class GestureConfigUpdate(BaseModel):
     cooldown: Optional[float] = None
     trigger: Optional[str] = None
 
+# Action Mapping Model (Merged from Maddy's Branch)
+class CustomAction(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    keys: List[str]
+
 # --- ROUTER ---
 api_router = APIRouter(prefix="/api")
 
 @api_router.get("/")
 async def root(): return {"message": "GestureOS Backend Running"}
 
-# --- ENGINE CONTROL & STATS (FIXED) ---
+# --- ENGINE CONTROL & STATS ---
 
 @api_router.get("/engine/status")
 async def get_engine_status():
     if not gesture_engine:
         return {"running": False, "error": "Engine not initialized", "count": 0}
     
-    # FIX: Return the real total count from the engine
     total_count = getattr(gesture_engine, 'total_gesture_count', 0)
     return {"running": gesture_engine.running, "count": total_count}
 
@@ -91,11 +95,10 @@ async def stop_engine():
         return {"status": "stopped"}
     return {"status": "already_stopped"}
 
-# --- ACTIVITY LOG (NEW ROUTE) ---
+# --- ACTIVITY LOG ---
 @api_router.get("/activity")
 async def get_activity_log():
     if not gesture_engine: return []
-    # FIX: Return the live log from the engine
     return list(getattr(gesture_engine, 'activity_log', []))
 
 # --- GESTURE CONFIGURATION ---
@@ -120,6 +123,33 @@ async def update_gesture(gesture_id: str, config: GestureConfigUpdate):
             except: pass
         return {"status": "updated"}
     raise HTTPException(404, "Not found")
+
+
+# --- CUSTOM ACTIONS ENDPOINTS (Merged from Maddy's Branch) ---
+@api_router.post("/custom-actions")
+async def create_custom_action(action: CustomAction):
+    if not gesture_engine: raise HTTPException(500, "No Engine")
+    
+    # 1. Register in the live python engine
+    gesture_engine.register_custom_action(action.id, action.keys)
+    
+    # 2. Save permanently to DB
+    if db is not None:
+        try: await db.custom_actions.insert_one(action.model_dump())
+        except: pass
+        
+    return {"status": "created", "id": action.id}
+
+@api_router.get("/custom-actions")
+async def get_custom_actions():
+    if db is not None:
+        try:
+            cursor = db.custom_actions.find({}, {'_id': 0})
+            actions = await cursor.to_list(length=100)
+            return actions
+        except: pass
+    return []
+
 
 # --- STATUS ---
 @api_router.post("/status")
@@ -156,15 +186,22 @@ app.include_router(api_router)
 # --- LIFESPAN EVENTS ---
 @app.on_event("startup")
 async def startup_event():
-    # FIX: Explicit boolean checks to avoid NotImplementedError
     if gesture_engine is not None and db is not None:
         try:
             await client.admin.command('ping') 
             logger.info("Connected to MongoDB.")
+            
+            # 1. Load Gesture Configs
             cursor = db.gesture_configs.find({})
             async for config in cursor:
                 g_id = config.pop("gesture_id", None)
                 if g_id: gesture_engine.update_gesture_config(g_id, config)
+                
+            # 2. Load custom shortcuts into engine on startup (Merged from Maddy's Branch)
+            cursor_actions = db.custom_actions.find({})
+            async for action in cursor_actions:
+                gesture_engine.register_custom_action(action['id'], action['keys'])
+                
         except Exception:
             logger.warning("MongoDB unavailable. Using defaults.")
 
@@ -184,17 +221,17 @@ async def websocket_video_endpoint(websocket: WebSocket):
                 with gesture_engine.lock:
                     frame_data = gesture_engine.current_frame
                 
-                # We send the RAW bytes. No JSON, no encoding overhead.
+                # Send the RAW bytes for zero-lag transmission
                 await websocket.send_bytes(frame_data)
             
-            # This controls your "God Mode" FPS. 
-            # 0.03 = ~33 FPS (Perfect for real-time tracking)
+            # FPS control
             await asyncio.sleep(0.03) 
             
     except WebSocketDisconnect:
         print("🔌 WEB-SOCKET: Client disconnected")
     except Exception as e:
-        print(f"❌ WEB-SOCKET Error: {e}") #oo 
+        print(f"❌ WEB-SOCKET Error: {e}") 
+
 # --- MIDDLEWARE ---
 app.add_middleware(
     CORSMiddleware,

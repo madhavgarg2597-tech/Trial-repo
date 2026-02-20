@@ -21,7 +21,7 @@ from gestures.Pro_snap import ProSnap
 from gestures.copy_paste import CopyPaste
 from gestures.screenshot import Screenshot
 from gestures.text_joystick import compute_text_joystick
-from gestures.virtual_mouse import VirtualMouse # <--- NEW IMPORT
+from gestures.virtual_mouse import VirtualMouse
 
 # --- SETUP ---
 pyautogui.FAILSAFE = False
@@ -58,7 +58,7 @@ class GestureEngine:
         self.volume_control = VolumeControl()
         self.two_hand_zoom = TwoHandZoom()
         self.swipe_tabs = SwipeTabs()
-        self.virtual_mouse = VirtualMouse() # <--- INITIALIZED
+        self.virtual_mouse = VirtualMouse()
 
         # 3. GESTURE CONFIGURATION
         self.gesture_settings = {
@@ -71,35 +71,24 @@ class GestureEngine:
             "screenshot": {"name": "Screenshot", "enabled": True, "sensitivity": 0.7, "cooldown": 2.0, "trigger": "screenshot"},
             "text_mode": {"name": "Text Joystick", "enabled": True, "sensitivity": 0.7, "cooldown": 0.15, "trigger": "arrow_keys"},
             "circular": {"name": "Undo/Redo Menu", "enabled": True, "sensitivity": 0.7, "cooldown": 1.0, "trigger": "undo_redo"},
-            
-            # BETA MOUSE SETTING
             "mouse_beta": {"name": "Virtual Mouse (Beta)", "enabled": False, "trigger": "virtual_mouse_beta"}
         }
 
         # 4. State Variables
+        self.custom_actions = {} # <--- STORES DYNAMIC MACROS
         self.dominant_hand = "Right"
         self.position_buffer = deque(maxlen=20)
         self.alpha = 0.7
         self.prev_volume = 0
         self.prev_zoom = 100
         self.last_triggered = {key: 0 for key in self.gesture_settings}
-        self.text_mode_active = False 
-        self.peace_counter = 0
-        self.PEACE_HOLD_FRAMES = 15
-        self.last_joystick_time = 0
-        self.circular_display_text = None
-        self.circular_display_timer = 0
-        self.DISPLAY_FRAMES = 20
 
     def start(self):
         if self.running: return
-        # Open Camera 0
         self.cap = cv2.VideoCapture(0)
         
-        # LAG KILLER 1: Minimize hardware buffer
+        # LAG KILLERS
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1) 
-        
-        # LAG KILLER 2: Lower Resolution to reduce CPU load
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         
@@ -110,37 +99,8 @@ class GestureEngine:
         self.thread = threading.Thread(target=self._run_loop, daemon=True)
         self.thread.start()
 
-    def _run_loop(self):
-        print("🚀 Lag-Killer Engine Started")
-        while self.running and self.cap.isOpened():
-            success, frame = self.cap.read()
-            self.cap.grab() 
-            
-            if not success:
-                time.sleep(0.01)
-                continue
-            
-            try:
-                
-                if self.detector:
-                    processed_frame = self._process_frame(frame)
-                else:
-                    processed_frame = frame
-
-                ret, buffer = cv2.imencode('.jpg', processed_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 40])
-                
-                if ret:
-                    with self.lock: 
-                        self.current_frame = buffer.tobytes()
-            
-            except Exception as e: 
-                print(f"❌ Processing Error: {e}")
-                    
-            time.sleep(0.001)
-
     def stop(self):
         self.running = False
-        if self.processing_thread: self.processing_thread.join()
         if self.cap: self.cap.release()
         print("🛑 Gesture Engine stopped.")
 
@@ -154,22 +114,20 @@ class GestureEngine:
                 continue
             
             try:
-                # If detector failed to load, just show raw video
                 if self.detector:
                     processed_frame = self._process_frame(frame)
                 else:
                     processed_frame = frame
 
-                # FIX: Compress image to 50% quality (Much faster transfer)
-                # The '50' here creates smaller data packets, eliminating lag
+                # Compression to eliminate WebSocket lag
                 ret, buffer = cv2.imencode('.jpg', processed_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
                 
                 if ret:
-                    with self.lock: self.current_frame = buffer.tobytes()
+                    with self.lock: 
+                        self.current_frame = buffer.tobytes()
             except Exception as e: 
                 print(f"❌ Frame Processing Error: {e}")
             
-            # Reduce sleep time to practically zero for maximum FPS
             time.sleep(0.001)
 
     async def get_video_stream(self):
@@ -177,6 +135,11 @@ class GestureEngine:
             with self.lock: frame = self.current_frame
             if frame: yield frame
             await asyncio.sleep(0.033)
+
+    def register_custom_action(self, action_id, keys):
+        """Allows dynamic key mapping injection from the database."""
+        self.custom_actions[action_id] = keys
+        print(f"✅ Registered Custom Action: {keys}")
 
     def update_gesture_config(self, gesture_id, config):
         if gesture_id in self.gesture_settings:
@@ -216,23 +179,30 @@ class GestureEngine:
             "arrow_keys": lambda: self._execute_joystick(sub_action),
             "screenshot": lambda: self.take_screenshot(),
             
-            # THE 4 VS 5 FINGER MAC ROUTING
             "switch_tabs_next_tab": lambda: pyautogui.hotkey('command', 'shift', ']'),
             "switch_tabs_prev_tab": lambda: pyautogui.hotkey('command', 'shift', '['),
             "switch_tabs_next_app": lambda: pyautogui.hotkey('ctrl', 'right'),
             "switch_tabs_prev_app": lambda: pyautogui.hotkey('ctrl', 'left'),
         }
 
-        # Check for sub-actions (like 'switch_tabs_next_app')
         lookup_key = target_action
         if sub_action and f"{target_action}_{sub_action}" in mapping:
             lookup_key = f"{target_action}_{sub_action}"
 
-        if lookup_key in mapping and self._check_cooldown(gesture_id):
+        if self._check_cooldown(gesture_id):
             try:
-                mapping[lookup_key]()
-                self._log_activity(gesture_name, lookup_key)
-            except Exception as e: print(f"Action Failed: {e}")
+                # 1. Custom Action mapped from the UI
+                if target_action in self.custom_actions:
+                    keys = self.custom_actions[target_action]
+                    pyautogui.hotkey(*keys)
+                    self._log_activity(gesture_name, f"Custom: {'+'.join(keys)}")
+                
+                # 2. Standard Hardcoded Mac Mapping
+                elif lookup_key in mapping:
+                    mapping[lookup_key]()
+                    self._log_activity(gesture_name, lookup_key)
+            except Exception as e: 
+                print(f"Action Failed: {e}")
 
     def _execute_joystick(self, direction):
         if direction and direction != "NONE":
@@ -267,46 +237,39 @@ class GestureEngine:
         return fingers
 
     def _process_frame(self, frame):
-        # 1. MIRROR FIX: Flip the raw pixels first
+        # 1. MIRROR FIX
         frame = cv2.flip(frame, 1)
         
         h, w, _ = frame.shape
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
         
-        # 2. DETECTION: Run on the mirrored image
         result = self.detector.detect(mp_image)
-        
         hands_data, handedness_list = [], []
 
         if result.hand_landmarks:
             for idx, lm_list in enumerate(result.hand_landmarks):
-                # 3. LABEL FIX: Swap Left/Right so math stays fast
+                # Swap labels so Mac logic fires cleanly
                 raw_label = result.handedness[idx][0].category_name
                 handedness = "Right" if raw_label == "Left" else "Left"
                 handedness_list.append(handedness)
 
-                # Wrap landmarks for compatibility with gesture modules
                 class LandmarkWrapper:
                     def __init__(self, l): self.landmark = l
                 
-                # 4. DATA FIX: This was missing! We must fill hands_data
                 fingers = self._get_finger_states(lm_list, handedness)
                 hand_wrapper = LandmarkWrapper(lm_list)
                 hands_data.append((hand_wrapper, fingers))
 
-                # Visuals: Drawn on flipped frame, so text is readable
                 self._draw_hand(frame, lm_list)
                 cv2.putText(frame, f"{handedness} Hand", 
                             (int(lm_list[0].x * w), int(lm_list[0].y * h) - 20), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-                # --- BETA MOUSE CHECK ---
                 if handedness == self.dominant_hand and self.gesture_settings["mouse_beta"]["enabled"]:
                     frame, mouse_action = self.virtual_mouse.process(frame, lm_list, handedness, w, h)
                     continue 
 
-                # --- POSITION BUFFER (For Swipes) ---
                 if idx == 0:
                     palm_ids = [0,5,9,13,17]
                     raw_cx = int(np.mean([lm_list[i].x for i in palm_ids]) * w)
@@ -320,9 +283,8 @@ class GestureEngine:
         
         else: self.position_buffer.clear()
 
-        # --- GESTURE EXECUTION (Now with working hands_data) ---
+        # --- GESTURE EXECUTION ---
         if not self.gesture_settings["mouse_beta"]["enabled"]:
-            # Two-Hand Zoom
             if len(hands_data) == 2 and self.gesture_settings["zoom"]["enabled"]:
                 frame, zoom_val = self.two_hand_zoom.process(frame, hands_data, w, h)
                 if abs(zoom_val - self.prev_zoom) > 2:
@@ -330,18 +292,15 @@ class GestureEngine:
                     self.trigger_action("zoom", sub)
                     self.prev_zoom = zoom_val
 
-            # Single Hand Gestures
             elif len(hands_data) == 1:
                 hand_wrapper, fingers = hands_data[0]
                 current_hand = handedness_list[0]
                 
-                # Volume Control
                 if current_hand != self.dominant_hand and self.gesture_settings["volume"]["enabled"]:
                     frame, vol_percent = self.volume_control.process(frame, hand_wrapper, fingers, w, h)
                     if vol_percent is not None and abs(vol_percent - self.prev_volume) > 5:
                         self.prev_volume = vol_percent
 
-                # Swipe/Snap Control
                 elif current_hand == self.dominant_hand:
                     frame, snap_action = self.pro_snap.process(frame, hands_data)
                     if snap_action == "RUN_CODE": self.trigger_action("snap")
