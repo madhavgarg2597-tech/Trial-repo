@@ -37,11 +37,8 @@ class GestureEngine:
         
         self.activity_log = deque(maxlen=20)
         self.total_gesture_count = 0 
-        self.custom_actions = {}
-        self.activity_log = deque(maxlen=20)
-        self.total_gesture_count = 0 
         self.custom_actions = {} 
-        self.os_type = "windows"  # <--- NEW: Default to Windows 
+        self.os_type = "windows"  # Default to Windows 
         
         # Load Model
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -83,14 +80,17 @@ class GestureEngine:
         self.last_triggered = {key: 0 for key in self.gesture_settings}
 
     def register_custom_action(self, action_id, keys):
-        """Allows dynamic key mapping injection."""
         self.custom_actions[action_id] = keys
 
     def start(self):
         if self.running: return
         self.cap = cv2.VideoCapture(0)
+        
+        # Performance Optimizations
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1) 
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        
         self.running = True
         self.processing_thread = threading.Thread(target=self._run_loop, daemon=True)
         self.processing_thread.start()
@@ -108,7 +108,7 @@ class GestureEngine:
                 continue
             try:
                 processed_frame = self._process_frame(frame)
-                ret, buffer = cv2.imencode('.jpg', processed_frame)
+                ret, buffer = cv2.imencode('.jpg', processed_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
                 if ret:
                     with self.lock: self.current_frame = buffer.tobytes()
             except Exception as e: print(f"Frame Processing Error: {e}")
@@ -156,32 +156,52 @@ class GestureEngine:
                 return 
             except Exception: pass
 
-        # 2. Hardcoded Actions (Added interval=0.05 to prevent OS from dropping the keystrokes)
-        # Determine which modifier keys to use based on the OS
+        # Determine Modifier Keys
         ctrl_key = 'command' if self.os_type == 'mac' else 'ctrl'
         win_key = 'command' if self.os_type == 'mac' else 'win'
-
-        # 2. Hardcoded Actions (Dynamic for Mac vs Windows)
+        
+        # Dynamic Mapping
+        # Note: 'switch_tabs' now handles both Apps (Virtual Desktops) and Tabs
+        # Dynamic Mapping
+        # Dynamic Mapping
+        # Dynamic Mapping
         mapping = {
             "save_file": lambda: pyautogui.hotkey(ctrl_key, 's', interval=0.05),
             "copy": lambda: pyautogui.hotkey(ctrl_key, 'c', interval=0.05),
             "paste": lambda: pyautogui.hotkey(ctrl_key, 'v', interval=0.05),
-            # Note: Mac uses Cmd+MissionControl (F11 usually) to show desktop. 
-            # We map it to Cmd+F3 or F11, but for now we'll map to win_key + d as placeholder
             "show_desktop": lambda: pyautogui.hotkey(win_key, 'd', interval=0.05), 
             "volume_control": lambda: pyautogui.press(sub_action),
             "zoom_control": lambda: pyautogui.hotkey(ctrl_key, sub_action, interval=0.05),
             "arrow_keys": lambda: self._execute_joystick(sub_action),
             "screenshot": lambda: self.take_screenshot(),
             "undo_redo": lambda: pyautogui.hotkey(ctrl_key, sub_action, interval=0.05),
-            "switch_tabs": lambda: pyautogui.hotkey(ctrl_key, *sub_action, interval=0.05) if isinstance(sub_action, list) else pyautogui.hotkey(ctrl_key, sub_action, interval=0.05)
-        }
+            
+            # --- Browser Tabs ---
+            "switch_tabs_next_tab": lambda: pyautogui.hotkey('ctrl', 'tab', interval=0.05) if self.os_type == 'windows' else pyautogui.hotkey('command', 'shift', ']', interval=0.05),
+            "switch_tabs_prev_tab": lambda: pyautogui.hotkey('ctrl', 'shift', 'tab', interval=0.05) if self.os_type == 'windows' else pyautogui.hotkey('command', 'shift', '[', interval=0.05),
+            
+            # --- Switch Apps in SAME Desktop (Alt+Tab / Cmd+Tab) ---
+            "switch_tabs_next_app": lambda: pyautogui.hotkey('alt', 'tab', interval=0.05) if self.os_type == 'windows' else pyautogui.hotkey('command', 'tab', interval=0.05),
+            "switch_tabs_prev_app": lambda: pyautogui.hotkey('alt', 'shift', 'tab', interval=0.05) if self.os_type == 'windows' else pyautogui.hotkey('command', 'shift', 'tab', interval=0.05),
+        }   
 
-        if target_action in mapping and self._check_cooldown(gesture_id):
+        # Resolve Lookup Key
+        lookup_key = target_action
+        if sub_action and f"{target_action}_{sub_action}" in mapping:
+            lookup_key = f"{target_action}_{sub_action}"
+        elif sub_action:
+            # Fallback for simple subactions like 'z' or 'y'
+            pass 
+
+        if lookup_key in mapping and self._check_cooldown(gesture_id):
             try:
-                mapping[target_action]()
-                self._log_activity(gesture_name, target_action)
+                mapping[lookup_key]()
+                self._log_activity(gesture_name, lookup_key)
             except Exception: pass
+        elif sub_action and target_action == "switch_tabs": 
+            # Fallback if mapping lookup failed but we have sub_action
+            # This handles cases where sub_action isn't pre-mapped
+            pass
 
     def _execute_joystick(self, direction):
         if direction and direction != "NONE":
@@ -295,7 +315,6 @@ class GestureEngine:
             
             # B: STANDARD GESTURES
             else:
-                # Get individual finger states (1 = UP, 0 = DOWN)
                 thumb, index, middle, ring, pinky = fingers
                 
                 # STRICT POSES:
@@ -303,25 +322,29 @@ class GestureEngine:
                 is_index_only = index and not middle and not ring and not pinky
                 is_peace_sign = index and middle and not ring and not pinky
 
-                # 1. Swipe Tabs (STRICT: Requires Open Palm + Stable Tracking)
-                if self.gesture_settings["swipe"]["enabled"] and is_open_palm and len(self.position_buffer) >= 10:
+                # 1. Swipe Tabs / Apps
+                if self.gesture_settings["swipe"]["enabled"] and is_open_palm and len(self.position_buffer) >= 5:
                     
-                    # Calculate velocity over 5 frames instead of 1 frame for smooth, deliberate movement
                     vx = self.position_buffer[-1][0] - self.position_buffer[-5][0]
                     
-                    # Add a hard threshold (must move at least 30 pixels) to ignore micro-jitters
+                    # Threshold to ignore micro-jitters
                     if abs(vx) > 30:
                         frame, swipe_action = self.swipe_tabs.process(frame, right_hand_data, vx)
                         
                         if swipe_action == "NEXT_TAB": 
-                            self.trigger_action("swipe", "tab")
-                            self.position_buffer.clear() # Clear memory to prevent double-swiping
-                            
+                            self.trigger_action("swipe", "next_tab")
+                            self.position_buffer.clear() 
                         elif swipe_action == "PREV_TAB": 
-                            self.trigger_action("swipe", ["shift", "tab"])
-                            self.position_buffer.clear() # Clear memory to prevent double-swiping
+                            self.trigger_action("swipe", "prev_tab")
+                            self.position_buffer.clear()
+                        elif swipe_action == "NEXT_APP": 
+                            self.trigger_action("swipe", "next_app")
+                            self.position_buffer.clear()
+                        elif swipe_action == "PREV_APP": 
+                            self.trigger_action("swipe", "prev_app")
+                            self.position_buffer.clear()
                     
-                # 2. Circular Undo/Redo (Requires ONLY Index Finger)
+                # 2. Circular Undo/Redo
                 if self.gesture_settings["circular"]["enabled"] and is_index_only:
                     if self.position_buffer:
                         cx, cy = self.position_buffer[-1]
@@ -332,7 +355,7 @@ class GestureEngine:
                         if circ_action == "UNDO": self.trigger_action("circular", "z")
                         elif circ_action == "REDO": self.trigger_action("circular", "y")
                             
-                # 3. Text Joystick (Requires PEACE SIGN)
+                # 3. Text Joystick
                 if self.gesture_settings["text_mode"]["enabled"] and is_peace_sign:
                     if self.position_buffer:
                         cx, cy = self.position_buffer[-1]
@@ -344,7 +367,7 @@ class GestureEngine:
                                 self.trigger_action("text_mode", text_action)
                         except: pass
 
-                # 4. Copy / Paste (Internal logic handles pinch detection)
+                # 4. Copy / Paste
                 if self.gesture_settings["copy"]["enabled"] or self.gesture_settings["paste"]["enabled"]:
                     try:
                         frame, cp_action = self.copy_paste.process(frame, right_hand_data)
@@ -352,7 +375,7 @@ class GestureEngine:
                         elif cp_action == "PASTE": self.trigger_action("paste")
                     except: pass
                     
-                # 5. Screenshot (Internal logic handles 4 fingers + Y velocity)
+                # 5. Screenshot
                 if self.gesture_settings["screenshot"]["enabled"] and len(self.position_buffer) >= 2:
                     vy = self.position_buffer[-1][1] - self.position_buffer[-2][1]
                     try:

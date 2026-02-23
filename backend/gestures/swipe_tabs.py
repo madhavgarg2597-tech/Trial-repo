@@ -3,19 +3,24 @@ import time
 
 class SwipeTabs:
     def __init__(self):
-        self.cooldown_time = 0.35  # Reduced from 1.0s (Makes it responsive)
+        # Configuration
+        self.cooldown_time = 0.35  # Keep it snappy (Main Repo)
         self.last_trigger_time = 0
-        self.velocity_threshold = 15  # Reduced from 30 (Makes it sensitive)
-
+        self.velocity_threshold = 20  # Balanced threshold
+        
     def process(self, frame, hands_data, velocity_x):
-        # Only single hand allowed
+        # Only single hand allowed for swipe
         if len(hands_data) != 1:
             return frame, None
 
-        hand_landmarks, fingers = hands_data[0]
-
-        # Relaxed check: Allow 4 or 5 fingers (sometimes thumb is hidden)
-        if sum(fingers) < 4:
+        hand_wrapper, fingers = hands_data[0]
+        
+        # Count active fingers to decide Mode
+        # 4 Fingers = Tab Switch
+        # 5 Fingers = App/Desktop Switch
+        finger_count = sum(fingers)
+        
+        if finger_count < 4:
             return frame, None
 
         current_time = time.time()
@@ -26,27 +31,32 @@ class SwipeTabs:
 
         action = None
 
-        # Swipe Right (Next Tab)
+        # --- LOGIC ---
+        # Right Swipe
         if velocity_x > self.velocity_threshold:
-            action = "NEXT_TAB"
+            if finger_count == 5:
+                action = "NEXT_APP" # Switch Desktop/Space
+            else:
+                action = "NEXT_TAB" # Switch Browser Tab
             self.last_trigger_time = current_time
 
-        # Swipe Left (Prev Tab)
+        # Left Swipe
         elif velocity_x < -self.velocity_threshold:
-            action = "PREV_TAB"
+            if finger_count == 5:
+                action = "PREV_APP"
+            else:
+                action = "PREV_TAB"
             self.last_trigger_time = current_time
 
-        # UI Feedback
+        # --- UI FEEDBACK ---
         if action:
-            text = "Next Tab >>" if action == "NEXT_TAB" else "<< Prev Tab"
-            cv2.putText(
-                frame,
-                text,
-                (50, 120),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (0, 255, 0),
-                3
-            )
+            # Green for Tabs, Orange for Apps
+            color = (0, 255, 0) if "TAB" in action else (0, 165, 255)
+            text = action.replace("_", " ")
+            
+            # Arrow indicator
+            label = f"{text} >>" if "NEXT" in action else f"<< {text}"
+            
+            cv2.putText(frame, label, (50, 120), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 3)
 
         return frame, action
